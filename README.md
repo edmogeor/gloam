@@ -1,0 +1,83 @@
+# Plasma Theme Watcher
+
+**Plasma Theme Watcher** is a robust theme switcher for the KDE Plasma desktop environment. It hooks into KDE's built-in Light/Dark mode switcher to automatically synchronize theme components that otherwise wouldn't get switched, such as Kvantum themes, GTK themes, Icon sets, Konsole profiles, and even custom scripts.
+
+It runs as a background service (systemd user unit) to ensure your desktop experience is consistent whenever you toggle the global theme via Quick Settings or when KDE switches the theme automatically.
+
+## Features
+
+-   **Kvantum Integration:** Automatically switches Kvantum themes (useful for application styling).
+-   **GTK Theme Sync:** Updates GTK 3/4 themes to match your Plasma preference.
+-   **Icon Theme Sync:** Changes icon packs for Light/Dark modes.
+-   **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
+-   **Splash Screen:** Optionally overrides or changes the splash screen.
+-   **Custom Scripts:** Run arbitrary scripts when switching to Light or Dark mode.
+-   **Systemd Service:** Installs a user-level systemd service to watch for changes automatically.
+
+## Requirements
+
+-   **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
+-   `inotify-tools`: Required for monitoring configuration changes.
+-   `kvantum`: If you want to manage Kvantum themes.
+
+## Installation & Configuration
+
+1.  **Clone or Download** this repository.
+2.  **Make the script executable** (optional, the script handles installation):
+    ```bash
+    chmod +x plasma-theme-watcher.sh
+    ```
+3.  **Run the configuration wizard**:
+    ```bash
+    ./plasma-theme-watcher.sh configure
+    ```
+
+The `configure` command will:
+-   Scan your system for available Kvantum themes, GTK themes, Icons, etc.
+-   Ask you to select which ones to use for **Light Mode** and **Dark Mode**.
+-   Detect your current Plasma Light/Dark global themes.
+-   Install the script to `~/.local/bin/` (optional).
+-   Create and enable a systemd user service (`plasma-theme-watcher.service`).
+
+### Partial Re-configuration
+
+You can re-configure specific components without going through the whole wizard:
+
+```bash
+./plasma-theme-watcher.sh configure --kvantum    # Only re-configure Kvantum
+./plasma-theme-watcher.sh configure --icons      # Only re-configure Icons
+./plasma-theme-watcher.sh configure --gtk        # Only re-configure GTK
+./plasma-theme-watcher.sh configure --konsole    # Only re-configure Konsole
+./plasma-theme-watcher.sh configure --script     # Only re-configure Custom Scripts
+```
+
+## Usage
+
+Once configured and installed, the service runs in the background. You usually don't need to touch it. However, you can use the CLI to manually switch modes or check status.
+
+### Commands
+
+| Command | Description |
+| :--- | :--- |
+| `plasma-theme-watcher configure` | Run the setup wizard. |
+| `plasma-theme-watcher status` | Show the service status and current theme configuration. |
+| `plasma-theme-watcher light` | Manually force **Light Mode** (and sync all sub-themes). |
+| `plasma-theme-watcher dark` | Manually force **Dark Mode** (and sync all sub-themes). |
+| `plasma-theme-watcher toggle` | Toggle between Light and Dark modes. |
+| `plasma-theme-watcher remove` | Stop the service and remove all configuration/installed files. |
+| `plasma-theme-watcher watch` | Run the monitor in the foreground (used by the service). |
+
+## How it works
+
+1.  The script reads your KDE global configuration to determine your preferred "Light" and "Dark" Global Themes (Look and Feel packages).
+2.  It uses `inotifywait` to monitor `~/.config/kdeglobals` for changes.
+3.  When you switch your Global Theme in System Settings (or via the Quick Settings widget), the script detects the change.
+4.  It immediately applies the corresponding Kvantum theme, GTK theme, Icons, etc., that you selected during `configure`.
+
+## Uninstallation
+
+To remove the service and configuration:
+
+```bash
+plasma-theme-watcher remove
+```
