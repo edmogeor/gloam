@@ -195,11 +195,11 @@ refresh_kvantum_style() {
 
     # Force a style change by setting opposite first, then target
     kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle "$opposite"
-    sleep 0.1
+    sleep 0.02
     dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.notifyChange int32:2 int32:0
-    sleep 0.2
+    sleep 0.05
     kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle "$style"
-    sleep 0.1
+    sleep 0.02
     dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.notifyChange int32:2 int32:0
 }
 
@@ -269,7 +269,7 @@ load_config_strict() {
 }
 
 do_light() {
-    load_config_strict
+    [[ -z "${LAF_LIGHT:-}" ]] && load_config_strict
     echo -e "Switching to ☀️ Light theme: ${BOLD}$LAF_LIGHT${RESET}"
     plasma-apply-lookandfeel -a "$LAF_LIGHT"
 
@@ -280,7 +280,7 @@ do_light() {
 }
 
 do_dark() {
-    load_config_strict
+    [[ -z "${LAF_DARK:-}" ]] && load_config_strict
     echo -e "Switching to 🌙 Dark theme: ${BOLD}$LAF_DARK${RESET}"
     plasma-apply-lookandfeel -a "$LAF_DARK"
 
