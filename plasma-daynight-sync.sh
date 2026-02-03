@@ -111,6 +111,19 @@ scan_splash_themes() {
     done | sort -t'|' -k2
 }
 
+scan_color_schemes() {
+    local schemes=()
+    for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes" /run/current-system/profile/share/color-schemes; do
+        [[ -d "$dir" ]] || continue
+        for scheme in "$dir"/*.colors; do
+            [[ -f "$scheme" ]] || continue
+            schemes+=("$(basename "$scheme" .colors)")
+        done
+    done
+    # Deduplicate and sort
+    printf '%s\n' "${schemes[@]}" | sort -u
+}
+
 install_plasmoid() {
     local script_dir
     script_dir="$(dirname "$(readlink -f "$0")")"
@@ -341,6 +354,11 @@ apply_splash() {
     fi
 }
 
+apply_color_scheme() {
+    local scheme="$1"
+    plasma-apply-colorscheme "$scheme" >/dev/null 2>&1 || true
+}
+
 update_laf_icons() {
     local laf="$1"
     local icon_theme="$2"
@@ -406,6 +424,7 @@ apply_theme() {
                 apply_flatpak_icons "$(get_current_icon_theme)"
             fi
         fi
+        [[ -n "$COLOR_NIGHT" ]] && apply_color_scheme "$COLOR_NIGHT"
         [[ -n "$KONSOLE_NIGHT" ]] && apply_konsole_profile "$KONSOLE_NIGHT"
         apply_splash "$SPLASH_NIGHT"
         apply_browser_color_scheme "night"
@@ -428,6 +447,7 @@ apply_theme() {
                 apply_flatpak_icons "$(get_current_icon_theme)"
             fi
         fi
+        [[ -n "$COLOR_DAY" ]] && apply_color_scheme "$COLOR_DAY"
         [[ -n "$KONSOLE_DAY" ]] && apply_konsole_profile "$KONSOLE_DAY"
         apply_splash "$SPLASH_DAY"
         apply_browser_color_scheme "day"
@@ -560,6 +580,7 @@ do_configure() {
     local configure_konsole=false
     local configure_script=false
     local configure_splash=false
+    local configure_colors=false
     local configure_widget=false
     local configure_shortcut=false
 
@@ -571,11 +592,12 @@ do_configure() {
             -o|--konsole)       configure_konsole=true; configure_all=false ;;
             -s|--script)        configure_script=true; configure_all=false ;;
             -S|--splash)        configure_splash=true; configure_all=false ;;
+            -c|--colors)        configure_colors=true; configure_all=false ;;
             -w|--widget)        configure_widget=true; configure_all=false ;;
             -K|--shortcut)      configure_shortcut=true; configure_all=false ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -w|--widget -K|--shortcut" >&2
+                echo "Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -c|--colors -w|--widget -K|--shortcut" >&2
                 exit 1
                 ;;
         esac
@@ -870,6 +892,48 @@ do_configure() {
     fi
     fi
 
+    # Select Color Schemes
+    if [[ "$configure_all" == true || "$configure_colors" == true ]]; then
+    echo ""
+    read -rp "Configure color schemes? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for color schemes..."
+        mapfile -t color_schemes < <(scan_color_schemes)
+
+        if [[ ${#color_schemes[@]} -eq 0 ]]; then
+            echo "No color schemes found, skipping."
+            COLOR_DAY=""
+            COLOR_NIGHT=""
+        else
+            echo ""
+            echo -e "${BOLD}Available color schemes:${RESET}"
+            for i in "${!color_schemes[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${color_schemes[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ DAY mode color scheme [1-${#color_schemes[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
+                COLOR_DAY="${color_schemes[$((choice - 1))]}"
+
+                read -rp "Select 🌙 NIGHT mode color scheme [1-${#color_schemes[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
+                    COLOR_NIGHT="${color_schemes[$((choice - 1))]}"
+                else
+                    COLOR_DAY=""
+                    COLOR_NIGHT=""
+                fi
+            else
+                COLOR_DAY=""
+                COLOR_NIGHT=""
+            fi
+        fi
+    else
+        COLOR_DAY=""
+        COLOR_NIGHT=""
+    fi
+    fi
+
     # Configure custom scripts
     if [[ "$configure_all" == true || "$configure_script" == true ]]; then
     echo ""
@@ -892,7 +956,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "$KVANTUM_DAY" && -z "$KVANTUM_NIGHT" && -z "$ICON_DAY" && -z "$ICON_NIGHT" && -z "$GTK_DAY" && -z "$GTK_NIGHT" && -z "$KONSOLE_DAY" && -z "$KONSOLE_NIGHT" && -z "$SCRIPT_DAY" && -z "$SCRIPT_NIGHT" && -z "$SPLASH_DAY" && -z "$SPLASH_NIGHT" ]]; then
+    if [[ -z "$KVANTUM_DAY" && -z "$KVANTUM_NIGHT" && -z "$ICON_DAY" && -z "$ICON_NIGHT" && -z "$GTK_DAY" && -z "$GTK_NIGHT" && -z "$KONSOLE_DAY" && -z "$KONSOLE_NIGHT" && -z "$SCRIPT_DAY" && -z "$SCRIPT_NIGHT" && -z "$SPLASH_DAY" && -z "$SPLASH_NIGHT" && -z "$COLOR_DAY" && -z "$COLOR_NIGHT" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -904,6 +968,7 @@ do_configure() {
     echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
     echo "    Icons: ${ICON_DAY:-unchanged}"
     echo "    GTK: ${GTK_DAY:-unchanged}"
+    echo "    Colors: ${COLOR_DAY:-unchanged}"
     echo "    Konsole: ${KONSOLE_DAY:-unchanged}"
     echo "    Splash: ${SPLASH_DAY:-unchanged}"
     echo "    Script: ${SCRIPT_DAY:-unchanged}"
@@ -911,6 +976,7 @@ do_configure() {
     echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
     echo "    Icons: ${ICON_NIGHT:-unchanged}"
     echo "    GTK: ${GTK_NIGHT:-unchanged}"
+    echo "    Colors: ${COLOR_NIGHT:-unchanged}"
     echo "    Konsole: ${KONSOLE_NIGHT:-unchanged}"
     echo "    Splash: ${SPLASH_NIGHT:-unchanged}"
     echo "    Script: ${SCRIPT_NIGHT:-unchanged}"
@@ -925,6 +991,8 @@ ICON_NIGHT=$ICON_NIGHT
 PLASMA_CHANGEICONS=$PLASMA_CHANGEICONS
 GTK_DAY=$GTK_DAY
 GTK_NIGHT=$GTK_NIGHT
+COLOR_DAY=$COLOR_DAY
+COLOR_NIGHT=$COLOR_NIGHT
 KONSOLE_DAY=$KONSOLE_DAY
 KONSOLE_NIGHT=$KONSOLE_NIGHT
 SPLASH_DAY=$SPLASH_DAY
@@ -1137,6 +1205,7 @@ do_status() {
         echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
         echo "    Icons: ${ICON_DAY:-unchanged}"
         echo "    GTK: ${GTK_DAY:-unchanged}"
+        echo "    Colors: ${COLOR_DAY:-unchanged}"
         echo "    Konsole: ${KONSOLE_DAY:-unchanged}"
         echo "    Splash: ${SPLASH_DAY:-unchanged}"
         echo "    Script: ${SCRIPT_DAY:-unchanged}"
@@ -1144,6 +1213,7 @@ do_status() {
         echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
         echo "    Icons: ${ICON_NIGHT:-unchanged}"
         echo "    GTK: ${GTK_NIGHT:-unchanged}"
+        echo "    Colors: ${COLOR_NIGHT:-unchanged}"
         echo "    Konsole: ${KONSOLE_NIGHT:-unchanged}"
         echo "    Splash: ${SPLASH_NIGHT:-unchanged}"
         echo "    Script: ${SCRIPT_NIGHT:-unchanged}"
@@ -1174,6 +1244,7 @@ Configure options:
   -g, --gtk           Configure GTK themes only
   -o, --konsole       Configure Konsole profiles only
   -S, --splash        Configure splash screens only
+  -c, --colors        Configure color schemes only
   -s, --script        Configure custom scripts only
   -w, --widget        Install/reinstall panel widget
   -K, --shortcut      Install/reinstall keyboard shortcut (Meta+Shift+L)
