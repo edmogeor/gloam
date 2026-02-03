@@ -479,81 +479,6 @@ apply_window_decoration() {
 }
 
 
-update_laf_icons() {
-    local laf="$1"
-    local icon_theme="$2"
-    local defaults_file=""
-    local system_laf_root=""
-
-    # Global variable to return the potentially new ID
-    UPDATED_LAF_ID="$laf"
-
-    # Find the defaults file for this look-and-feel
-    for dir in "${HOME}/.local/share/plasma/look-and-feel" "/usr/share/plasma/look-and-feel"; do
-        if [[ -f "${dir}/${laf}/contents/defaults" ]]; then
-            defaults_file="${dir}/${laf}/contents/defaults"
-            system_laf_root="${dir}/${laf}"
-            break
-        fi
-    done
-
-    if [[ -z "$defaults_file" ]]; then
-        echo "Warning: Could not find defaults file for $laf" >&2
-        return 1
-    fi
-
-    # Check if we need to copy to user directory (if it's a system file)
-    if [[ "$defaults_file" == /usr/* ]]; then
-        local friendly_name
-        friendly_name=$(get_friendly_name laf "$laf")
-        
-        local original_id
-        original_id=$(basename "$system_laf_root")
-        local new_id="${original_id}.copy"
-        local new_laf_root="${HOME}/.local/share/plasma/look-and-feel/${new_id}"
-
-        # Create new user copy if it doesn't exist
-        if [[ ! -d "$new_laf_root" ]]; then
-            echo -e "  ${YELLOW}!${RESET} Creating user copy of ${BOLD}$friendly_name${RESET} for customization..."
-            mkdir -p "${new_laf_root}/contents"
-            
-            # Copy and update metadata
-            if [[ -f "${system_laf_root}/metadata.json" ]]; then
-                jq --arg id "$new_id" \
-                   --arg name "$friendly_name ($icon_theme)" \
-                   --arg fallback "$original_id" \
-                   '.KPlugin.Id = $id | .KPlugin.Name = $name | .["X-KDE-fallbackPackage"] = $fallback' \
-                   "${system_laf_root}/metadata.json" > "${new_laf_root}/metadata.json"
-            else
-                # Fallback for non-JSON metadata (rare, but just copy it)
-                cp "${system_laf_root}/metadata.desktop" "${new_laf_root}/" 2>/dev/null || true
-            fi
-
-            # Copy defaults
-            cp "${system_laf_root}/contents/defaults" "${new_laf_root}/contents/defaults"
-
-            # Copy previews (optional but recommended for UX)
-            if [[ -d "${system_laf_root}/contents/previews" ]]; then
-                 cp -r "${system_laf_root}/contents/previews" "${new_laf_root}/contents/"
-            fi
-
-            # Add managed flag
-            touch "${new_laf_root}/.sync_managed"
-        fi
-        
-        UPDATED_LAF_ID="$new_id"
-        defaults_file="${new_laf_root}/contents/defaults"
-    fi
-
-    # Backup the defaults file if not already backed up
-    if [[ ! -f "${defaults_file}.bak" ]]; then
-        cp "$defaults_file" "${defaults_file}.bak"
-    fi
-
-    # Update the icon theme
-    kwriteconfig6 --file "$defaults_file" --group kdeglobals --group Icons --key Theme "$icon_theme"
-}
-
 refresh_kvantum_style() {
     local style="$1"
     kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle "$style"
@@ -630,6 +555,9 @@ do_watch() {
         echo "Error: inotifywait not found. Install inotify-tools." >&2
         exit 1
     fi
+
+    # Wait for Plasma to fully initialize before applying theme
+    sleep 2
 
     PREV_LAF=$(get_laf)
     apply_theme "$PREV_LAF"
@@ -1026,40 +954,6 @@ do_configure() {
                 read -rp "Select 🌙 NIGHT mode icon theme [1-${#icon_themes[@]}]: " choice
                 if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#icon_themes[@]} )); then
                     ICON_NIGHT="${icon_themes[$((choice - 1))]}"
-
-                    # Offer to update look-and-feel defaults
-                    echo ""
-                    echo -e "${YELLOW}Note:${RESET} You can embed these icon themes directly into your look-and-feel themes."
-                    echo "This means KDE will switch icons automatically, without needing this watcher."
-                    echo -e "${YELLOW}Note:${RESET} For system themes, a local override theme will be created to store these customizations."
-                    read -rp "Update look-and-feel themes with these icon packs? [y/N]: " choice
-                    if [[ "$choice" =~ ^[Yy]$ ]]; then
-                        if update_laf_icons "$laf_day" "$ICON_DAY"; then
-                            if [[ "$UPDATED_LAF_ID" != "$laf_day" ]]; then
-                                echo -e "  ${GREEN}✓${RESET} Switched day theme to managed copy: ${BOLD}$UPDATED_LAF_ID${RESET}"
-                                laf_day="$UPDATED_LAF_ID"
-                                kwriteconfig6 --file kdeglobals --group KDE --key DefaultLightLookAndFeel "$laf_day"
-                            else
-                                echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} with $ICON_DAY"
-                            fi
-                        fi
-                        
-                        if update_laf_icons "$laf_night" "$ICON_NIGHT"; then
-                            if [[ "$UPDATED_LAF_ID" != "$laf_night" ]]; then
-                                echo -e "  ${GREEN}✓${RESET} Switched night theme to managed copy: ${BOLD}$UPDATED_LAF_ID${RESET}"
-                                laf_night="$UPDATED_LAF_ID"
-                                kwriteconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel "$laf_night"
-                            else
-                                echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} with $ICON_NIGHT"
-                            fi
-                        fi
-
-                        # Clear icon config since LAF will handle it
-                        ICON_DAY=""
-                        ICON_NIGHT=""
-                        PLASMA_CHANGEICONS=""
-                        echo "Icon switching will now be handled by the look-and-feel themes."
-                    fi
                 else
                     ICON_DAY=""
                     ICON_NIGHT=""
@@ -1444,27 +1338,6 @@ do_remove() {
     fi
     if systemctl --user is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
         systemctl --user disable "$SERVICE_NAME"
-    fi
-
-    # Restore or remove look-and-feel overrides
-    local laf_dir="${HOME}/.local/share/plasma/look-and-feel"
-    if [[ -d "$laf_dir" ]]; then
-        find "$laf_dir" -maxdepth 2 -name ".sync_managed" | while read -r flag; do
-            theme_root=$(dirname "$flag")
-            local theme_id
-            theme_id=$(basename "$theme_root")
-            local friendly_name
-            friendly_name=$(get_friendly_name laf "$theme_id")
-            rm -rf "$theme_root"
-            echo -e "Removed managed local theme: ${BOLD}$friendly_name${RESET}"
-        done
-        
-        # Fallback for themes that were modified but not fully copied (restore .bak files)
-        find "$laf_dir" -name "defaults.bak" | while read -r bak; do
-            defaults="${bak%.bak}"
-            mv "$bak" "$defaults"
-            echo "Restored $defaults from backup"
-        done
     fi
 
     local removed=0
