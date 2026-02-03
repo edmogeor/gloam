@@ -121,6 +121,57 @@ Once configured and installed, the service runs in the background. You usually d
 3.  When you switch your Global Theme in System Settings (or via the Quick Settings widget), the script detects the change.
 4.  It immediately applies the corresponding Kvantum theme, GTK theme, Icons, etc., that you selected during `configure`.
 
+## Day/Night Wallpapers
+
+**Note:** This tool does not manage wallpapers, as KDE Plasma 6 handles day/night wallpaper switching natively through dynamic wallpapers.
+
+To set up automatic day/night wallpaper switching:
+
+1. **Create a wallpaper folder** with the following structure:
+
+```
+MyWallpaper/
+├── metadata.json
+└── contents/
+    ├── images/          # Day wallpapers
+    │   ├── 1920x1080.png
+    │   ├── 1080x1920.png
+    │   └── 3440x1440.png
+    └── images_dark/     # Night wallpapers
+        ├── 1920x1080.png
+        ├── 1080x1920.png
+        └── 3440x1440.png
+```
+
+2. **Create the `metadata.json` file:**
+
+```json
+{
+    "KPlugin": {
+        "Authors": [
+            {
+            }
+        ],
+        "Id": "MyWallpaper",
+        "License": "CC-BY-SA-4.0",
+        "Name": "MyWallpaper"
+    }
+}
+```
+
+3. **Add your wallpaper images:**
+   - Place day wallpapers in `contents/images/`
+   - Place night wallpapers in `contents/images_dark/`
+   - Name each file by its resolution (e.g., `1920x1080.png`)
+   - KDE will automatically select the appropriate resolution for each display
+
+4. **Install the wallpaper:**
+   - Open System Settings > Wallpaper
+   - **Drag and drop** the wallpaper folder onto the settings page (the file picker doesn't support selecting directories)
+   - Select your new dynamic wallpaper
+
+KDE will automatically switch between day and night wallpapers based on your Day/Night mode settings.
+
 ## Uninstallation
 
 To remove the service and configuration:
