@@ -500,7 +500,7 @@ update_laf_icons() {
     if [[ "$defaults_file" == /usr/* ]]; then
         local friendly_name
         friendly_name=$(get_friendly_name laf "$laf")
-        echo -e "  ${YELLOW}!${RESET} ${BOLD}$friendly_name${RESET} ($laf) is a system theme; creating local copy in ~/.local for overrides..."
+        echo -e "  ${YELLOW}!${RESET} ${BOLD}$friendly_name${RESET} is a system theme; creating local copy in ~/.local for overrides..."
         local system_laf_root="/usr/share/plasma/look-and-feel/${laf}"
         local laf_root="${HOME}/.local/share/plasma/look-and-feel/${laf}"
 
@@ -631,7 +631,7 @@ do_day() {
 
     local friendly_name
     friendly_name=$(get_friendly_name laf "$LAF_DAY")
-    echo -e "Switching to ☀️ Day theme: ${BOLD}$friendly_name${RESET} ($LAF_DAY)"
+    echo -e "Switching to ☀️ Day theme: ${BOLD}$friendly_name${RESET}"
     plasma-apply-lookandfeel -a "$LAF_DAY"
 
     # Restore auto mode if it was enabled
@@ -653,7 +653,7 @@ do_night() {
 
     local friendly_name
     friendly_name=$(get_friendly_name laf "$LAF_NIGHT")
-    echo -e "Switching to 🌙 Night theme: ${BOLD}$friendly_name${RESET} ($LAF_NIGHT)"
+    echo -e "Switching to 🌙 Night theme: ${BOLD}$friendly_name${RESET}"
     plasma-apply-lookandfeel -a "$LAF_NIGHT"
 
     # Restore auto mode if it was enabled
@@ -897,8 +897,8 @@ do_configure() {
     local laf_day laf_night
     laf_day=$(kreadconfig6 --file kdeglobals --group KDE --key DefaultLightLookAndFeel)
     laf_night=$(kreadconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel)
-    echo -e "  ☀️ Day theme: ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} ($laf_day)"
-    echo -e "  🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} ($laf_night)"
+    echo -e "  ☀️ Day theme: ${BOLD}$(get_friendly_name laf "$laf_day")${RESET}"
+    echo -e "  🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$laf_night")${RESET}"
 
     if [[ "$laf_day" == "$laf_night" ]]; then
         echo -e "${RED}Error: ☀️ Day and 🌙 Night LookAndFeel are the same ($laf_day).${RESET}" >&2
@@ -1136,9 +1136,9 @@ do_configure() {
                     read -rp "Update look-and-feel themes with these icon packs? [y/N]: " choice
                     if [[ "$choice" =~ ^[Yy]$ ]]; then
                         update_laf_icons "$laf_day" "$ICON_DAY" && \
-                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} ($laf_day) with $ICON_DAY"
+                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} with $ICON_DAY"
                         update_laf_icons "$laf_night" "$ICON_NIGHT" && \
-                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} ($laf_night) with $ICON_NIGHT"
+                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} with $ICON_NIGHT"
                         # Clear icon config since LAF will handle it
                         ICON_DAY=""
                         ICON_NIGHT=""
@@ -1364,7 +1364,7 @@ do_configure() {
 
     echo ""
     echo "Configuration summary:"
-    echo -e "☀️ Day theme: ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} ($laf_day)"
+    echo -e "☀️ Day theme: ${BOLD}$(get_friendly_name laf "$laf_day")${RESET}"
     echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
     echo "    Style: ${STYLE_DAY:-unchanged}"
     echo "    Decorations: $(get_friendly_name decoration "${DECORATION_DAY:-}")"
@@ -1375,7 +1375,7 @@ do_configure() {
     echo "    Konsole: ${KONSOLE_DAY:-unchanged}"
     echo "    Splash: $(get_friendly_name splash "${SPLASH_DAY:-}")"
     echo "    Script: ${SCRIPT_DAY:-unchanged}"
-    echo -e "🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} ($laf_night)"
+    echo -e "🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$laf_night")${RESET}"
     echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
     echo "    Style: ${STYLE_NIGHT:-unchanged}"
     echo "    Decorations: $(get_friendly_name decoration "${DECORATION_NIGHT:-}")"
@@ -1557,7 +1557,7 @@ do_remove() {
             local friendly_name
             friendly_name=$(get_friendly_name laf "$theme_id")
             rm -rf "$theme_root"
-            echo "Removed managed local theme: ${BOLD}$friendly_name${RESET} ($theme_id)"
+            echo "Removed managed local theme: ${BOLD}$friendly_name${RESET}"
         done
         
         # Fallback for themes that were modified but not fully copied (restore .bak files)
