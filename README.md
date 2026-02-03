@@ -121,6 +121,14 @@ Once configured and installed, the service runs in the background. You usually d
 3.  When you switch your Global Theme in System Settings (or via the Quick Settings widget), the script detects the change.
 4.  It immediately applies the corresponding Kvantum theme, GTK theme, Icons, etc., that you selected during `configure`.
 
+## Uninstallation
+
+To remove the service and configuration:
+
+```bash
+plasma-daynight-sync remove
+```
+
 ## Day/Night Wallpapers
 
 **Note:** This tool does not manage wallpapers, as KDE Plasma 6 handles day/night wallpaper switching natively through dynamic wallpapers.
@@ -172,11 +180,3 @@ To set up automatic day/night wallpaper switching:
    - Ensure **Switch dynamic wallpapers:** is set to **Based on whether Plasma style is light or dark**
 
 KDE will automatically switch between day and night wallpapers based on your Day/Night mode settings.
-
-## Uninstallation
-
-To remove the service and configuration:
-
-```bash
-plasma-daynight-sync remove
-```
