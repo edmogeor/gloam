@@ -146,7 +146,7 @@ To set up automatic day/night wallpaper switching:
         └── 7680x2160.png
 ```
 
-2. **Create the `metadata.json` file** (The `Id` field must match the directory name and be a single word):
+2. **Create the `metadata.json` file** [Make sure the Id field is one word with no spaces]:
 
 ```json
 {
