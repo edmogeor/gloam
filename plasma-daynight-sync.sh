@@ -231,7 +231,7 @@ remove_shortcut() {
     fi
     # Remove from kglobalshortcutsrc
     if grep -q "$SHORTCUT_ID" "${HOME}/.config/kglobalshortcutsrc" 2>/dev/null; then
-        kwriteconfig6 --file kglobalshortcutsrc --group "services" --group "$SHORTCUT_ID" --delete-group
+        kwriteconfig6 --file kglobalshortcutsrc --group "services" --group "$SHORTCUT_ID" --key "_launch" --delete
         echo "Removed keyboard shortcut"
     fi
 }
