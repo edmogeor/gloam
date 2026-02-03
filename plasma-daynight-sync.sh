@@ -208,14 +208,27 @@ update_laf_icons() {
 
     # Check if we need to copy to user directory (if it's a system file)
     if [[ "$defaults_file" == /usr/* ]]; then
-        local user_dir="${HOME}/.local/share/plasma/look-and-feel/${laf}/contents"
-        mkdir -p "$user_dir"
-        cp "$defaults_file" "$user_dir/defaults"
-        defaults_file="$user_dir/defaults"
+        echo -e "  ${YELLOW}!${RESET} $laf is a system theme; creating local copy in ~/.local for overrides..."
+        local laf_root="${HOME}/.local/share/plasma/look-and-feel/${laf}"
+        local user_contents="${laf_root}/contents"
+        mkdir -p "$user_contents"
+
+        # Copy defaults
+        cp "$defaults_file" "$user_contents/defaults"
+        defaults_file="$user_contents/defaults"
+
+        # Copy metadata (required for Plasma to recognize the theme)
+        local system_laf_root="/usr/share/plasma/look-and-feel/${laf}"
+        cp "${system_laf_root}/metadata."* "$laf_root/" 2>/dev/null || true
+    fi
+
+    # Backup the defaults file if not already backed up
+    if [[ ! -f "${defaults_file}.bak" ]]; then
+        cp "$defaults_file" "${defaults_file}.bak"
     fi
 
     # Update the icon theme
-    kwriteconfig6 --file "$defaults_file" --group Icons --key Theme "$icon_theme"
+    kwriteconfig6 --file "$defaults_file" --group kdeglobals --group Icons --key Theme "$icon_theme"
 }
 
 refresh_kvantum_style() {
@@ -316,7 +329,7 @@ do_toggle() {
     load_config_strict
     local current_laf
     current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage)
-    
+
     if [[ "$current_laf" == "$LAF_DARK" ]]; then
         do_light
     else
@@ -436,7 +449,7 @@ do_configure() {
         if [[ -z "${PLASMA_CHANGEICONS:-}" ]]; then
             PLASMA_CHANGEICONS=$(find /usr/lib /usr/libexec /usr/lib64 -name "plasma-changeicons" -print -quit 2>/dev/null || true)
         fi
-        
+
         if [[ -z "$PLASMA_CHANGEICONS" ]]; then
             echo "Error: plasma-changeicons not found." >&2
             exit 1
@@ -706,16 +719,19 @@ EOF
     echo -e "${GREEN}Successfully configured and started $SERVICE_NAME.${RESET}"
 
     # Check if plasma-qt-forcerefresh patch is installed
-    local platform_theme_lib="/usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so"
-    if [[ -f "$platform_theme_lib" ]] && ! nm -C "$platform_theme_lib" 2>/dev/null | grep -q "forceStyleRefresh"; then
-        echo ""
-        echo -e "${YELLOW}Note:${RESET} For Qt applications to refresh seamlessly when switching themes,"
-        echo "you may need to install the plasma-qt-forcerefresh patch:"
-        echo ""
+    local is_patched=""
+    is_patched=$(nm -C /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so 2>/dev/null | grep "forceStyleRefresh" || true)
+
+    if [[ -z "$is_patched" ]]; then
+        # Check secondary path just in case
+        is_patched=$(nm -C /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so 2>/dev/null | grep "forceStyleRefresh" || true)
+    fi
+
+    if [[ -z "$is_patched" ]] && command -v nm &>/dev/null; then
+        echo -e "\n${YELLOW}Note:${RESET} Standard Qt apps (Dolphin, Kate, etc.) require a patch to refresh themes without restarting."
+        echo "If you want seamless live-switching, install the forcerefresh patch:"
         echo "  git clone https://github.com/edmogeor/plasma-qt-forcerefresh.git"
         echo "  cd plasma-qt-forcerefresh && ./plasma-integration-patch-manager.sh install"
-        echo ""
-        echo "Without this patch, some Qt apps may require a restart to reflect theme changes."
     fi
 }
 
@@ -725,6 +741,16 @@ do_remove() {
     fi
     if systemctl --user is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
         systemctl --user disable "$SERVICE_NAME"
+    fi
+
+    # Restore look-and-feel backups
+    local laf_dir="${HOME}/.local/share/plasma/look-and-feel"
+    if [[ -d "$laf_dir" ]]; then
+        find "$laf_dir" -name "defaults.bak" | while read -r bak; do
+            defaults="${bak%.bak}"
+            mv "$bak" "$defaults"
+            echo "Restored $defaults from backup"
+        done
     fi
 
     local removed=0
