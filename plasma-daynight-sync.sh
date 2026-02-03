@@ -39,6 +39,8 @@ get_friendly_name() {
             for dir in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
                 if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
                     jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
+                elif [[ -f "${dir}/${id}/metadata.desktop" ]]; then
+                    grep -m1 "^Name=" "${dir}/${id}/metadata.desktop" 2>/dev/null | cut -d= -f2 && return 0
                 fi
             done
             ;;
@@ -62,6 +64,8 @@ get_friendly_name() {
             for dir in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
                 if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
                     jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
+                elif [[ -f "${dir}/${id}/metadata.desktop" ]]; then
+                    grep -m1 "^Name=" "${dir}/${id}/metadata.desktop" 2>/dev/null | cut -d= -f2 && return 0
                 fi
             done
             ;;
