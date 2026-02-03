@@ -53,14 +53,58 @@ scan_icon_themes() {
         [[ -d "$dir" ]] || continue
         for theme_dir in "$dir"/*/; do
             [[ -f "${theme_dir}index.theme" ]] || continue
-            # Exclude cursor themes
-            [[ -d "${theme_dir}cursors" ]] && continue
+            # Exclude cursor-only themes
+            [[ -d "${theme_dir}cursors" && ! -d "${theme_dir}actions" && ! -d "${theme_dir}apps" ]] && continue
             themes+=("$(basename "$theme_dir")")
         done
     done
     # Deduplicate and sort
     printf '%s\n' "${themes[@]}" | sort -u
 }
+
+scan_cursor_themes() {
+    local themes=()
+    for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
+        [[ -d "$dir" ]] || continue
+        for theme_dir in "$dir"/*/; do
+            [[ -d "${theme_dir}cursors" ]] || continue
+            themes+=("$(basename "$theme_dir")")
+        done
+    done
+    # Deduplicate and sort
+    printf '%s\n' "${themes[@]}" | sort -u
+}
+
+scan_window_decorations() {
+    local seen_ids=""
+    # Aurorae themes
+    for dir in /usr/share/aurorae/themes "${HOME}/.local/share/aurorae/themes"; do
+        [[ -d "$dir" ]] || continue
+        for theme_dir in "$dir"/*/; do
+            [[ -f "${theme_dir}metadata.desktop" || -f "${theme_dir}aurorae.theme" ]] || continue
+            local id name
+            id="__aurorae__svg__$(basename "$theme_dir")"
+            [[ "$seen_ids" == *"|$id|"* ]] && continue
+            seen_ids+="|$id|"
+            # Get friendly name from metadata.desktop
+            name=""
+            if [[ -f "${theme_dir}metadata.desktop" ]]; then
+                name=$(grep -m1 "^Name=" "${theme_dir}metadata.desktop" 2>/dev/null | cut -d= -f2)
+            fi
+            printf '%s|%s\n' "$id" "${name:-$(basename "$theme_dir")}"
+        done
+    done
+    # Built-in decorations (check if plugin exists)
+    for plugin_dir in /usr/lib/qt6/plugins/org.kde.kdecoration2 /usr/lib64/qt6/plugins/org.kde.kdecoration2 /usr/lib/x86_64-linux-gnu/qt6/plugins/org.kde.kdecoration2; do
+        [[ -d "$plugin_dir" ]] || continue
+        [[ -f "$plugin_dir/org.kde.breeze.so" || -f "$plugin_dir/breeze.so" ]] && printf '%s|%s\n' "org.kde.breeze" "Breeze"
+        [[ -f "$plugin_dir/org.kde.oxygen.so" || -f "$plugin_dir/oxygen.so" ]] && printf '%s|%s\n' "org.kde.oxygen" "Oxygen"
+        [[ -f "$plugin_dir/org.kde.plastik.so" || -f "$plugin_dir/plastik.so" ]] && printf '%s|%s\n' "org.kde.plastik" "Plastik"
+        [[ -f "$plugin_dir/org.kde.kwin.aurorae.so" || -f "$plugin_dir/kwin_aurorae.so" ]] && printf '%s|%s\n' "org.kde.kwin.aurorae" "Aurorae"
+        break
+    done
+}
+
 
 scan_gtk_themes() {
     local themes=()
@@ -122,6 +166,19 @@ scan_color_schemes() {
     done
     # Deduplicate and sort
     printf '%s\n' "${schemes[@]}" | sort -u
+}
+
+scan_plasma_styles() {
+    local styles=()
+    for dir in /usr/share/plasma/desktoptheme "${HOME}/.local/share/plasma/desktoptheme"; do
+        [[ -d "$dir" ]] || continue
+        for style_dir in "$dir"/*/; do
+            [[ -f "${style_dir}metadata.json" || -f "${style_dir}metadata.desktop" ]] || continue
+            styles+=("$(basename "$style_dir")")
+        done
+    done
+    # Deduplicate and sort
+    printf '%s\n' "${styles[@]}" | sort -u
 }
 
 install_plasmoid() {
@@ -359,6 +416,28 @@ apply_color_scheme() {
     plasma-apply-colorscheme "$scheme" >/dev/null 2>&1 || true
 }
 
+apply_plasma_style() {
+    local style="$1"
+    plasma-apply-desktoptheme "$style" >/dev/null 2>&1 || true
+}
+
+apply_cursor_theme() {
+    local theme="$1"
+    plasma-apply-cursortheme "$theme" >/dev/null 2>&1 || true
+}
+
+apply_window_decoration() {
+    local decoration="$1"
+    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key theme "$decoration"
+    # Reconfigure KWin to apply the change
+    if command -v qdbus6 &>/dev/null; then
+        qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    elif command -v qdbus &>/dev/null; then
+        qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
+    fi
+}
+
+
 update_laf_icons() {
     local laf="$1"
     local icon_theme="$2"
@@ -425,6 +504,9 @@ apply_theme() {
             fi
         fi
         [[ -n "$COLOR_NIGHT" ]] && apply_color_scheme "$COLOR_NIGHT"
+        [[ -n "$STYLE_NIGHT" ]] && apply_plasma_style "$STYLE_NIGHT"
+        [[ -n "$DECORATION_NIGHT" ]] && apply_window_decoration "$DECORATION_NIGHT"
+        [[ -n "$CURSOR_NIGHT" ]] && apply_cursor_theme "$CURSOR_NIGHT"
         [[ -n "$KONSOLE_NIGHT" ]] && apply_konsole_profile "$KONSOLE_NIGHT"
         apply_splash "$SPLASH_NIGHT"
         apply_browser_color_scheme "night"
@@ -448,6 +530,9 @@ apply_theme() {
             fi
         fi
         [[ -n "$COLOR_DAY" ]] && apply_color_scheme "$COLOR_DAY"
+        [[ -n "$STYLE_DAY" ]] && apply_plasma_style "$STYLE_DAY"
+        [[ -n "$DECORATION_DAY" ]] && apply_window_decoration "$DECORATION_DAY"
+        [[ -n "$CURSOR_DAY" ]] && apply_cursor_theme "$CURSOR_DAY"
         [[ -n "$KONSOLE_DAY" ]] && apply_konsole_profile "$KONSOLE_DAY"
         apply_splash "$SPLASH_DAY"
         apply_browser_color_scheme "day"
@@ -561,6 +646,137 @@ clean_app_overrides() {
     done < <(find "${HOME}/.config" -maxdepth 1 -type f)
 }
 
+get_other_users() {
+    # Get list of regular users (UID >= 1000, excluding current user and nobody)
+    while IFS=: read -r username _ uid _ _ home _; do
+        [[ "$uid" -ge 1000 && "$uid" -lt 65534 && "$username" != "$USER" && -d "$home" ]] || continue
+        echo "$username:$home"
+    done < /etc/passwd
+}
+
+apply_to_other_users() {
+    local users
+    mapfile -t users < <(get_other_users)
+
+    if [[ ${#users[@]} -eq 0 ]]; then
+        echo "No other users found on the system."
+        return 0
+    fi
+
+    # Check if we have sudo access
+    if ! sudo -n true 2>/dev/null; then
+        # Try to get sudo access
+        if ! sudo true 2>/dev/null; then
+            echo ""
+            echo -e "${YELLOW}Could not obtain sudo access.${RESET}"
+            echo "To apply settings to all users, run:"
+            echo -e "  ${BOLD}sudo plasma-daynight-sync configure --all-users${RESET}"
+            return 1
+        fi
+    fi
+
+    echo ""
+    echo -e "${BLUE}Applying settings to all users...${RESET}"
+
+    for user_entry in "${users[@]}"; do
+        local username="${user_entry%%:*}"
+        local user_home="${user_entry#*:}"
+
+        echo -e "  Configuring ${BOLD}$username${RESET}..."
+
+        # Copy local themes if needed
+        if [[ -n "$KVANTUM_DAY" || -n "$KVANTUM_NIGHT" ]]; then
+            for theme in "$KVANTUM_DAY" "$KVANTUM_NIGHT"; do
+                [[ -z "$theme" ]] && continue
+                if [[ -d "${HOME}/.config/Kvantum/$theme" ]]; then
+                    sudo mkdir -p "$user_home/.config/Kvantum" 2>/dev/null
+                    sudo cp -r "${HOME}/.config/Kvantum/$theme" "$user_home/.config/Kvantum/" 2>/dev/null
+                    sudo chown -R "$username:$username" "$user_home/.config/Kvantum/$theme" 2>/dev/null
+                fi
+            done
+        fi
+
+        # Copy local icon themes if needed
+        for theme in "$ICON_DAY" "$ICON_NIGHT" "$CURSOR_DAY" "$CURSOR_NIGHT"; do
+            [[ -z "$theme" ]] && continue
+            for src_dir in "${HOME}/.local/share/icons" "${HOME}/.icons"; do
+                if [[ -d "$src_dir/$theme" ]]; then
+                    sudo mkdir -p "$user_home/.local/share/icons" 2>/dev/null
+                    sudo cp -r "$src_dir/$theme" "$user_home/.local/share/icons/" 2>/dev/null
+                    sudo chown -R "$username:$username" "$user_home/.local/share/icons/$theme" 2>/dev/null
+                    break
+                fi
+            done
+        done
+
+        # Copy local GTK themes if needed
+        for theme in "$GTK_DAY" "$GTK_NIGHT"; do
+            [[ -z "$theme" ]] && continue
+            for src_dir in "${HOME}/.themes" "${HOME}/.local/share/themes"; do
+                if [[ -d "$src_dir/$theme" ]]; then
+                    sudo mkdir -p "$user_home/.local/share/themes" 2>/dev/null
+                    sudo cp -r "$src_dir/$theme" "$user_home/.local/share/themes/" 2>/dev/null
+                    sudo chown -R "$username:$username" "$user_home/.local/share/themes/$theme" 2>/dev/null
+                    break
+                fi
+            done
+        done
+
+        # Copy the config file
+        sudo cp "$CONFIG_FILE" "$user_home/.config/plasma-daynight-sync.conf" 2>/dev/null
+        sudo chown "$username:$username" "$user_home/.config/plasma-daynight-sync.conf" 2>/dev/null
+
+        # Set the Day/Night themes in KDE settings
+        local laf_day laf_night
+        laf_day=$(kreadconfig6 --file kdeglobals --group KDE --key DefaultLightLookAndFeel)
+        laf_night=$(kreadconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel)
+        if [[ -n "$laf_day" ]]; then
+            sudo -u "$username" kwriteconfig6 --file kdeglobals --group KDE --key DefaultLightLookAndFeel "$laf_day" 2>/dev/null || true
+        fi
+        if [[ -n "$laf_night" ]]; then
+            sudo -u "$username" kwriteconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel "$laf_night" 2>/dev/null || true
+        fi
+        # Enable automatic theme switching
+        sudo -u "$username" kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true 2>/dev/null || true
+
+        # Copy the script if installed globally
+        if [[ -f "$CLI_PATH" ]]; then
+            sudo mkdir -p "$user_home/.local/bin" 2>/dev/null
+            sudo cp "$CLI_PATH" "$user_home/.local/bin/plasma-daynight-sync" 2>/dev/null
+            sudo chown "$username:$username" "$user_home/.local/bin/plasma-daynight-sync" 2>/dev/null
+        fi
+
+        # Install and enable systemd service for the user
+        sudo mkdir -p "$user_home/.config/systemd/user" 2>/dev/null
+        sudo mkdir -p "$user_home/.config/systemd/user/default.target.wants" 2>/dev/null
+
+        # Update service file to use the user's path
+        local user_service="$user_home/.config/systemd/user/plasma-daynight-sync.service"
+        sudo bash -c "cat > '$user_service'" <<EOF
+[Unit]
+Description=Plasma auto theme watcher (Kvantum switcher)
+
+[Service]
+ExecStart=$user_home/.local/bin/plasma-daynight-sync watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+EOF
+        sudo chown "$username:$username" "$user_service" 2>/dev/null
+
+        # Enable the service by creating symlink
+        sudo ln -sf ../plasma-daynight-sync.service "$user_home/.config/systemd/user/default.target.wants/plasma-daynight-sync.service" 2>/dev/null
+        sudo chown -h "$username:$username" "$user_home/.config/systemd/user/default.target.wants/plasma-daynight-sync.service" 2>/dev/null
+
+        echo -e "    ${GREEN}✓${RESET} Done"
+    done
+
+    echo ""
+    echo -e "${GREEN}Settings applied to all users.${RESET}"
+}
+
 do_configure() {
     check_desktop_environment
     check_dependencies
@@ -581,8 +797,12 @@ do_configure() {
     local configure_script=false
     local configure_splash=false
     local configure_colors=false
+    local configure_style=false
+    local configure_decorations=false
+    local configure_cursors=false
     local configure_widget=false
     local configure_shortcut=false
+    local configure_allusers=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -593,11 +813,15 @@ do_configure() {
             -s|--script)        configure_script=true; configure_all=false ;;
             -S|--splash)        configure_splash=true; configure_all=false ;;
             -c|--colors)        configure_colors=true; configure_all=false ;;
+            -p|--style)         configure_style=true; configure_all=false ;;
+            -d|--decorations)   configure_decorations=true; configure_all=false ;;
+            -C|--cursors)       configure_cursors=true; configure_all=false ;;
             -w|--widget)        configure_widget=true; configure_all=false ;;
             -K|--shortcut)      configure_shortcut=true; configure_all=false ;;
+            -a|--all-users)     configure_allusers=true ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -c|--colors -w|--widget -K|--shortcut" >&2
+                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -w|--widget -K|--shortcut -a|--all-users" >&2
                 exit 1
                 ;;
         esac
@@ -681,6 +905,94 @@ do_configure() {
     else
         KVANTUM_DAY=""
         KVANTUM_NIGHT=""
+    fi
+    fi
+
+    # Select Plasma Styles
+    if [[ "$configure_all" == true || "$configure_style" == true ]]; then
+    echo ""
+    read -rp "Configure Plasma styles? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for Plasma styles..."
+        mapfile -t plasma_styles < <(scan_plasma_styles)
+
+        if [[ ${#plasma_styles[@]} -eq 0 ]]; then
+            echo "No Plasma styles found, skipping."
+            STYLE_DAY=""
+            STYLE_NIGHT=""
+        else
+            echo ""
+            echo -e "${BOLD}Available Plasma styles:${RESET}"
+            for i in "${!plasma_styles[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${plasma_styles[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ DAY mode Plasma style [1-${#plasma_styles[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#plasma_styles[@]} )); then
+                STYLE_DAY="${plasma_styles[$((choice - 1))]}"
+
+                read -rp "Select 🌙 NIGHT mode Plasma style [1-${#plasma_styles[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#plasma_styles[@]} )); then
+                    STYLE_NIGHT="${plasma_styles[$((choice - 1))]}"
+                else
+                    STYLE_DAY=""
+                    STYLE_NIGHT=""
+                fi
+            else
+                STYLE_DAY=""
+                STYLE_NIGHT=""
+            fi
+        fi
+    else
+        STYLE_DAY=""
+        STYLE_NIGHT=""
+    fi
+    fi
+
+    # Select Window Decorations
+    if [[ "$configure_all" == true || "$configure_decorations" == true ]]; then
+    echo ""
+    read -rp "Configure window decorations? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for window decorations..."
+        local decoration_ids=() decoration_names=()
+        while IFS='|' read -r id name; do
+            decoration_ids+=("$id")
+            decoration_names+=("$name")
+        done < <(scan_window_decorations)
+
+        if [[ ${#decoration_ids[@]} -eq 0 ]]; then
+            echo "No window decorations found, skipping."
+            DECORATION_DAY=""
+            DECORATION_NIGHT=""
+        else
+            echo ""
+            echo -e "${BOLD}Available window decorations:${RESET}"
+            for i in "${!decoration_names[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${decoration_names[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ DAY mode window decoration [1-${#decoration_ids[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#decoration_ids[@]} )); then
+                DECORATION_DAY="${decoration_ids[$((choice - 1))]}"
+
+                read -rp "Select 🌙 NIGHT mode window decoration [1-${#decoration_ids[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#decoration_ids[@]} )); then
+                    DECORATION_NIGHT="${decoration_ids[$((choice - 1))]}"
+                else
+                    DECORATION_DAY=""
+                    DECORATION_NIGHT=""
+                fi
+            else
+                DECORATION_DAY=""
+                DECORATION_NIGHT=""
+            fi
+        fi
+    else
+        DECORATION_DAY=""
+        DECORATION_NIGHT=""
     fi
     fi
 
@@ -800,6 +1112,48 @@ do_configure() {
         ICON_DAY=""
         ICON_NIGHT=""
         PLASMA_CHANGEICONS=""
+    fi
+    fi
+
+    # Select Cursor themes
+    if [[ "$configure_all" == true || "$configure_cursors" == true ]]; then
+    echo ""
+    read -rp "Configure cursor themes? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for cursor themes..."
+        mapfile -t cursor_themes < <(scan_cursor_themes)
+
+        if [[ ${#cursor_themes[@]} -eq 0 ]]; then
+            echo "No cursor themes found, skipping."
+            CURSOR_DAY=""
+            CURSOR_NIGHT=""
+        else
+            echo ""
+            echo -e "${BOLD}Available cursor themes:${RESET}"
+            for i in "${!cursor_themes[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${cursor_themes[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ DAY mode cursor theme [1-${#cursor_themes[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_themes[@]} )); then
+                CURSOR_DAY="${cursor_themes[$((choice - 1))]}"
+
+                read -rp "Select 🌙 NIGHT mode cursor theme [1-${#cursor_themes[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_themes[@]} )); then
+                    CURSOR_NIGHT="${cursor_themes[$((choice - 1))]}"
+                else
+                    CURSOR_DAY=""
+                    CURSOR_NIGHT=""
+                fi
+            else
+                CURSOR_DAY=""
+                CURSOR_NIGHT=""
+            fi
+        fi
+    else
+        CURSOR_DAY=""
+        CURSOR_NIGHT=""
     fi
     fi
 
@@ -956,7 +1310,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "$KVANTUM_DAY" && -z "$KVANTUM_NIGHT" && -z "$ICON_DAY" && -z "$ICON_NIGHT" && -z "$GTK_DAY" && -z "$GTK_NIGHT" && -z "$KONSOLE_DAY" && -z "$KONSOLE_NIGHT" && -z "$SCRIPT_DAY" && -z "$SCRIPT_NIGHT" && -z "$SPLASH_DAY" && -z "$SPLASH_NIGHT" && -z "$COLOR_DAY" && -z "$COLOR_NIGHT" ]]; then
+    if [[ -z "$KVANTUM_DAY" && -z "$KVANTUM_NIGHT" && -z "$STYLE_DAY" && -z "$STYLE_NIGHT" && -z "$DECORATION_DAY" && -z "$DECORATION_NIGHT" && -z "$COLOR_DAY" && -z "$COLOR_NIGHT" && -z "$ICON_DAY" && -z "$ICON_NIGHT" && -z "$CURSOR_DAY" && -z "$CURSOR_NIGHT" && -z "$GTK_DAY" && -z "$GTK_NIGHT" && -z "$KONSOLE_DAY" && -z "$KONSOLE_NIGHT" && -z "$SPLASH_DAY" && -z "$SPLASH_NIGHT" && -z "$SCRIPT_DAY" && -z "$SCRIPT_NIGHT" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -966,17 +1320,23 @@ do_configure() {
     echo "Configuration summary:"
     echo -e "☀️ Day theme: ${BOLD}$laf_day${RESET}"
     echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
-    echo "    Icons: ${ICON_DAY:-unchanged}"
-    echo "    GTK: ${GTK_DAY:-unchanged}"
+    echo "    Style: ${STYLE_DAY:-unchanged}"
+    echo "    Decorations: ${DECORATION_DAY:-unchanged}"
     echo "    Colors: ${COLOR_DAY:-unchanged}"
+    echo "    Icons: ${ICON_DAY:-unchanged}"
+    echo "    Cursors: ${CURSOR_DAY:-unchanged}"
+    echo "    GTK: ${GTK_DAY:-unchanged}"
     echo "    Konsole: ${KONSOLE_DAY:-unchanged}"
     echo "    Splash: ${SPLASH_DAY:-unchanged}"
     echo "    Script: ${SCRIPT_DAY:-unchanged}"
     echo -e "🌙 Night theme:  ${BOLD}$laf_night${RESET}"
     echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
-    echo "    Icons: ${ICON_NIGHT:-unchanged}"
-    echo "    GTK: ${GTK_NIGHT:-unchanged}"
+    echo "    Style: ${STYLE_NIGHT:-unchanged}"
+    echo "    Decorations: ${DECORATION_NIGHT:-unchanged}"
     echo "    Colors: ${COLOR_NIGHT:-unchanged}"
+    echo "    Icons: ${ICON_NIGHT:-unchanged}"
+    echo "    Cursors: ${CURSOR_NIGHT:-unchanged}"
+    echo "    GTK: ${GTK_NIGHT:-unchanged}"
     echo "    Konsole: ${KONSOLE_NIGHT:-unchanged}"
     echo "    Splash: ${SPLASH_NIGHT:-unchanged}"
     echo "    Script: ${SCRIPT_NIGHT:-unchanged}"
@@ -993,6 +1353,12 @@ GTK_DAY=$GTK_DAY
 GTK_NIGHT=$GTK_NIGHT
 COLOR_DAY=$COLOR_DAY
 COLOR_NIGHT=$COLOR_NIGHT
+STYLE_DAY=$STYLE_DAY
+STYLE_NIGHT=$STYLE_NIGHT
+DECORATION_DAY=$DECORATION_DAY
+DECORATION_NIGHT=$DECORATION_NIGHT
+CURSOR_DAY=$CURSOR_DAY
+CURSOR_NIGHT=$CURSOR_NIGHT
 KONSOLE_DAY=$KONSOLE_DAY
 KONSOLE_NIGHT=$KONSOLE_NIGHT
 SPLASH_DAY=$SPLASH_DAY
@@ -1031,35 +1397,44 @@ EOF
         return 0
     fi
 
-    echo ""
-    read -rp "Do you want to install 'plasma-daynight-sync' globally to ~/.local/bin? [y/N]: " choice
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        mkdir -p "$(dirname "$CLI_PATH")"
+    # Skip install prompts if partial reconfigure and already installed
+    if [[ "$configure_all" == false && "$installed_globally" == true ]]; then
         cp "$0" "$CLI_PATH"
         chmod +x "$CLI_PATH"
         executable_path="$CLI_PATH"
-        installed_globally=true
-        echo -e "${GREEN}Installed to $CLI_PATH${RESET}"
-
-        # Offer to install the panel widget
+    elif [[ "$configure_all" == true ]]; then
         echo ""
-        read -rp "Do you want to install the Day/Night Toggle panel widget? [y/N]: " choice
+        read -rp "Do you want to install 'plasma-daynight-sync' globally to ~/.local/bin? [y/N]: " choice
         if [[ "$choice" =~ ^[Yy]$ ]]; then
-            install_plasmoid
-        fi
+            mkdir -p "$(dirname "$CLI_PATH")"
+            cp "$0" "$CLI_PATH"
+            chmod +x "$CLI_PATH"
+            executable_path="$CLI_PATH"
+            installed_globally=true
+            echo -e "${GREEN}Installed to $CLI_PATH${RESET}"
 
-        # Offer to install keyboard shortcut
-        echo ""
-        read -rp "Do you want to add a keyboard shortcut (Meta+Shift+L) to toggle themes? [y/N]: " choice
-        if [[ "$choice" =~ ^[Yy]$ ]]; then
-            install_shortcut
+            # Offer to install the panel widget
+            echo ""
+            read -rp "Do you want to install the Day/Night Toggle panel widget? [y/N]: " choice
+            if [[ "$choice" =~ ^[Yy]$ ]]; then
+                install_plasmoid
+            fi
+
+            # Offer to install keyboard shortcut
+            echo ""
+            read -rp "Do you want to add a keyboard shortcut (Meta+Shift+L) to toggle themes? [y/N]: " choice
+            if [[ "$choice" =~ ^[Yy]$ ]]; then
+                install_shortcut
+            fi
+        else
+            # Use absolute path of current script
+            executable_path=$(readlink -f "$0")
+            echo ""
+            echo -e "${YELLOW}Note:${RESET} The panel widget and keyboard shortcut require the command to be installed globally."
+            echo "Run configure again and choose 'yes' for global installation to enable these features."
         fi
     else
-        # Use absolute path of current script
         executable_path=$(readlink -f "$0")
-        echo ""
-        echo -e "${YELLOW}Note:${RESET} The panel widget and keyboard shortcut require the command to be installed globally."
-        echo "Run configure again and choose 'yes' for global installation to enable these features."
     fi
 
     # Install systemd service
@@ -1084,6 +1459,22 @@ EOF
     kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
 
     echo -e "${GREEN}Successfully configured and started $SERVICE_NAME.${RESET}"
+
+    # Apply settings to other users if requested via flag
+    if [[ "$configure_allusers" == true ]]; then
+        apply_to_other_users
+    # Offer to apply settings to other users (only if other users exist)
+    elif [[ "$configure_all" == true ]]; then
+        local other_users
+        mapfile -t other_users < <(get_other_users)
+        if [[ ${#other_users[@]} -gt 0 ]]; then
+            echo ""
+            read -rp "Apply these settings to all users on this system? [y/N]: " choice
+            if [[ "$choice" =~ ^[Yy]$ ]]; then
+                apply_to_other_users
+            fi
+        fi
+    fi
 
     # Check if plasma-qt-forcerefresh patch is installed
     local is_patched=""
@@ -1203,17 +1594,23 @@ do_status() {
         source "$CONFIG_FILE"
         echo -e "☀️ Day theme: ${BOLD}$LAF_DAY${RESET}"
         echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
-        echo "    Icons: ${ICON_DAY:-unchanged}"
-        echo "    GTK: ${GTK_DAY:-unchanged}"
+        echo "    Style: ${STYLE_DAY:-unchanged}"
+        echo "    Decorations: ${DECORATION_DAY:-unchanged}"
         echo "    Colors: ${COLOR_DAY:-unchanged}"
+        echo "    Icons: ${ICON_DAY:-unchanged}"
+        echo "    Cursors: ${CURSOR_DAY:-unchanged}"
+        echo "    GTK: ${GTK_DAY:-unchanged}"
         echo "    Konsole: ${KONSOLE_DAY:-unchanged}"
         echo "    Splash: ${SPLASH_DAY:-unchanged}"
         echo "    Script: ${SCRIPT_DAY:-unchanged}"
         echo -e "🌙 Night theme:  ${BOLD}$LAF_NIGHT${RESET}"
         echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
-        echo "    Icons: ${ICON_NIGHT:-unchanged}"
-        echo "    GTK: ${GTK_NIGHT:-unchanged}"
+        echo "    Style: ${STYLE_NIGHT:-unchanged}"
+        echo "    Decorations: ${DECORATION_NIGHT:-unchanged}"
         echo "    Colors: ${COLOR_NIGHT:-unchanged}"
+        echo "    Icons: ${ICON_NIGHT:-unchanged}"
+        echo "    Cursors: ${CURSOR_NIGHT:-unchanged}"
+        echo "    GTK: ${GTK_NIGHT:-unchanged}"
         echo "    Konsole: ${KONSOLE_NIGHT:-unchanged}"
         echo "    Splash: ${SPLASH_NIGHT:-unchanged}"
         echo "    Script: ${SCRIPT_NIGHT:-unchanged}"
@@ -1245,6 +1642,9 @@ Configure options:
   -o, --konsole       Configure Konsole profiles only
   -S, --splash        Configure splash screens only
   -c, --colors        Configure color schemes only
+  -p, --style         Configure Plasma styles only
+  -d, --decorations   Configure window decorations only
+  -C, --cursors       Configure cursor themes only
   -s, --script        Configure custom scripts only
   -w, --widget        Install/reinstall panel widget
   -K, --shortcut      Install/reinstall keyboard shortcut (Meta+Shift+L)
@@ -1261,6 +1661,7 @@ Examples:
   $0 configure -k -i        Configure only Kvantum and icon themes
   $0 configure --splash     Configure only splash screens
   $0 configure --script     Configure only custom scripts
+  $0 configure --all-users  Apply settings to all users on the system
   $0 status                 Show current configuration
   $0 remove                 Remove all installed files
 EOF
