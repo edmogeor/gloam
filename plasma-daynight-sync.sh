@@ -327,25 +327,17 @@ update_laf_icons() {
     # Check if we need to copy to user directory (if it's a system file)
     if [[ "$defaults_file" == /usr/* ]]; then
         echo -e "  ${YELLOW}!${RESET} $laf is a system theme; creating local copy in ~/.local for overrides..."
-        local laf_root="${HOME}/.local/share/plasma/look-and-feel/${laf}"
-        local user_contents="${laf_root}/contents"
-        mkdir -p "$user_contents"
-
-        # Copy defaults
-        cp "$defaults_file" "$user_contents/defaults"
-        defaults_file="$user_contents/defaults"
-
-        # Copy metadata (required for Plasma to recognize the theme)
         local system_laf_root="/usr/share/plasma/look-and-feel/${laf}"
-        cp "${system_laf_root}/metadata."* "$laf_root/" 2>/dev/null || true
+        local laf_root="${HOME}/.local/share/plasma/look-and-feel/${laf}"
+
+        # Copy entire theme directory
+        mkdir -p "$(dirname "$laf_root")"
+        cp -r "$system_laf_root" "$laf_root"
 
         # Add managed flag so we can safely delete this on removal
         touch "${laf_root}/.sync_managed"
 
-        # Copy previews (so the theme looks correct in System Settings)
-        if [[ -d "${system_laf_root}/contents/previews" ]]; then
-            cp -r "${system_laf_root}/contents/previews" "$user_contents/"
-        fi
+        defaults_file="${laf_root}/contents/defaults"
     fi
 
     # Backup the defaults file if not already backed up
