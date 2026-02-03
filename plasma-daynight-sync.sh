@@ -483,11 +483,16 @@ update_laf_icons() {
     local laf="$1"
     local icon_theme="$2"
     local defaults_file=""
+    local system_laf_root=""
+
+    # Global variable to return the potentially new ID
+    UPDATED_LAF_ID="$laf"
 
     # Find the defaults file for this look-and-feel
     for dir in "${HOME}/.local/share/plasma/look-and-feel" "/usr/share/plasma/look-and-feel"; do
         if [[ -f "${dir}/${laf}/contents/defaults" ]]; then
             defaults_file="${dir}/${laf}/contents/defaults"
+            system_laf_root="${dir}/${laf}"
             break
         fi
     done
@@ -501,18 +506,43 @@ update_laf_icons() {
     if [[ "$defaults_file" == /usr/* ]]; then
         local friendly_name
         friendly_name=$(get_friendly_name laf "$laf")
-        echo -e "  ${YELLOW}!${RESET} ${BOLD}$friendly_name${RESET} is a system theme; creating local copy in ~/.local for overrides..."
-        local system_laf_root="/usr/share/plasma/look-and-feel/${laf}"
-        local laf_root="${HOME}/.local/share/plasma/look-and-feel/${laf}"
+        
+        local original_id
+        original_id=$(basename "$system_laf_root")
+        local new_id="${original_id}.copy"
+        local new_laf_root="${HOME}/.local/share/plasma/look-and-feel/${new_id}"
 
-        # Copy entire theme directory
-        mkdir -p "$(dirname "$laf_root")"
-        cp -r "$system_laf_root" "$laf_root"
+        # Create new user copy if it doesn't exist
+        if [[ ! -d "$new_laf_root" ]]; then
+            echo -e "  ${YELLOW}!${RESET} Creating user copy of ${BOLD}$friendly_name${RESET} for customization..."
+            mkdir -p "${new_laf_root}/contents"
+            
+            # Copy and update metadata
+            if [[ -f "${system_laf_root}/metadata.json" ]]; then
+                jq --arg id "$new_id" \
+                   --arg name "$friendly_name (Copy)" \
+                   --arg fallback "$original_id" \
+                   '.KPlugin.Id = $id | .KPlugin.Name = $name | .["X-KDE-fallbackPackage"] = $fallback' \
+                   "${system_laf_root}/metadata.json" > "${new_laf_root}/metadata.json"
+            else
+                # Fallback for non-JSON metadata (rare, but just copy it)
+                cp "${system_laf_root}/metadata.desktop" "${new_laf_root}/" 2>/dev/null || true
+            fi
 
-        # Add managed flag so we can safely delete this on removal
-        touch "${laf_root}/.sync_managed"
+            # Copy defaults
+            cp "${system_laf_root}/contents/defaults" "${new_laf_root}/contents/defaults"
 
-        defaults_file="${laf_root}/contents/defaults"
+            # Copy previews (optional but recommended for UX)
+            if [[ -d "${system_laf_root}/contents/previews" ]]; then
+                 cp -r "${system_laf_root}/contents/previews" "${new_laf_root}/contents/"
+            fi
+
+            # Add managed flag
+            touch "${new_laf_root}/.sync_managed"
+        fi
+        
+        UPDATED_LAF_ID="$new_id"
+        defaults_file="${new_laf_root}/contents/defaults"
     fi
 
     # Backup the defaults file if not already backed up
@@ -1004,10 +1034,26 @@ do_configure() {
                     echo -e "${YELLOW}Warning:${RESET} This change won't persist if you reinstall/update the themes."
                     read -rp "Update look-and-feel themes with these icon packs? [y/N]: " choice
                     if [[ "$choice" =~ ^[Yy]$ ]]; then
-                        update_laf_icons "$laf_day" "$ICON_DAY" && \
-                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} with $ICON_DAY"
-                        update_laf_icons "$laf_night" "$ICON_NIGHT" && \
-                            echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} with $ICON_NIGHT"
+                        if update_laf_icons "$laf_day" "$ICON_DAY"; then
+                            if [[ "$UPDATED_LAF_ID" != "$laf_day" ]]; then
+                                echo -e "  ${GREEN}✓${RESET} Switched day theme to managed copy: ${BOLD}$UPDATED_LAF_ID${RESET}"
+                                laf_day="$UPDATED_LAF_ID"
+                                kwriteconfig6 --file kdeglobals --group KDE --key DefaultLightLookAndFeel "$laf_day"
+                            else
+                                echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_day")${RESET} with $ICON_DAY"
+                            fi
+                        fi
+                        
+                        if update_laf_icons "$laf_night" "$ICON_NIGHT"; then
+                            if [[ "$UPDATED_LAF_ID" != "$laf_night" ]]; then
+                                echo -e "  ${GREEN}✓${RESET} Switched night theme to managed copy: ${BOLD}$UPDATED_LAF_ID${RESET}"
+                                laf_night="$UPDATED_LAF_ID"
+                                kwriteconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel "$laf_night"
+                            else
+                                echo -e "  ${GREEN}✓${RESET} Updated ${BOLD}$(get_friendly_name laf "$laf_night")${RESET} with $ICON_NIGHT"
+                            fi
+                        fi
+
                         # Clear icon config since LAF will handle it
                         ICON_DAY=""
                         ICON_NIGHT=""
