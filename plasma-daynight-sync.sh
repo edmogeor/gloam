@@ -1031,7 +1031,7 @@ do_configure() {
                     echo ""
                     echo -e "${YELLOW}Note:${RESET} You can embed these icon themes directly into your look-and-feel themes."
                     echo "This means KDE will switch icons automatically, without needing this watcher."
-                    echo -e "${YELLOW}Warning:${RESET} This change won't persist if you reinstall/update the themes."
+                    echo -e "${YELLOW}Note:${RESET} For system themes, a local override theme will be created to store these customizations."
                     read -rp "Update look-and-feel themes with these icon packs? [y/N]: " choice
                     if [[ "$choice" =~ ^[Yy]$ ]]; then
                         if update_laf_icons "$laf_day" "$ICON_DAY"; then
@@ -1456,7 +1456,7 @@ do_remove() {
             local friendly_name
             friendly_name=$(get_friendly_name laf "$theme_id")
             rm -rf "$theme_root"
-            echo "Removed managed local theme: ${BOLD}$friendly_name${RESET}"
+            echo -e "Removed managed local theme: ${BOLD}$friendly_name${RESET}"
         done
         
         # Fallback for themes that were modified but not fully copied (restore .bak files)
