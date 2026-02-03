@@ -220,6 +220,11 @@ update_laf_icons() {
         # Copy metadata (required for Plasma to recognize the theme)
         local system_laf_root="/usr/share/plasma/look-and-feel/${laf}"
         cp "${system_laf_root}/metadata."* "$laf_root/" 2>/dev/null || true
+
+        # Copy previews (so the theme looks correct in System Settings)
+        if [[ -d "${system_laf_root}/contents/previews" ]]; then
+            cp -r "${system_laf_root}/contents/previews" "$user_contents/"
+        fi
     fi
 
     # Backup the defaults file if not already backed up
