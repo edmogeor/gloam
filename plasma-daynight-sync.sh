@@ -282,15 +282,17 @@ apply_konsole_profile() {
 }
 
 apply_splash() {
-    if [[ -n "$SPLASH_OVERWRITE" ]]; then
+    local splash="$1"
+    if [[ -n "$splash" ]]; then
         # Delay to let KDE finish applying LookAndFeel (which overwrites ksplashrc)
-        sleep 0.5
-        kwriteconfig6 --file ksplashrc --group KSplash --key Theme "$SPLASH_OVERWRITE"
-        # When "None" is selected, set Engine to "none" to disable splash screen
+        sleep 1.5
+        # When "None" is selected, set Engine to "none" first to disable splash screen
         # (otherwise KDE uses KSplashQML which still shows a splash)
-        if [[ "$SPLASH_OVERWRITE" == "None" ]]; then
+        if [[ "$splash" == "None" ]]; then
             kwriteconfig6 --file ksplashrc --group KSplash --key Engine "none"
+            kwriteconfig6 --file ksplashrc --group KSplash --key Theme "None"
         else
+            kwriteconfig6 --file ksplashrc --group KSplash --key Theme "$splash"
             kwriteconfig6 --file ksplashrc --group KSplash --key Engine "KSplashQML"
         fi
     fi
@@ -362,7 +364,7 @@ apply_theme() {
         [[ -n "$ICON_DARK" && -n "$PLASMA_CHANGEICONS" ]] && "$PLASMA_CHANGEICONS" "$ICON_DARK"
         [[ -n "$GTK_DARK" ]] && apply_gtk_theme "$GTK_DARK"
         [[ -n "$KONSOLE_DARK" ]] && apply_konsole_profile "$KONSOLE_DARK"
-        apply_splash
+        apply_splash "$SPLASH_DARK"
         apply_browser_color_scheme "dark"
         [[ -n "$SCRIPT_DARK" && -x "$SCRIPT_DARK" ]] && "$SCRIPT_DARK"
         dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.forceRefresh
@@ -376,7 +378,7 @@ apply_theme() {
         [[ -n "$ICON_LIGHT" && -n "$PLASMA_CHANGEICONS" ]] && "$PLASMA_CHANGEICONS" "$ICON_LIGHT"
         [[ -n "$GTK_LIGHT" ]] && apply_gtk_theme "$GTK_LIGHT"
         [[ -n "$KONSOLE_LIGHT" ]] && apply_konsole_profile "$KONSOLE_LIGHT"
-        apply_splash
+        apply_splash "$SPLASH_LIGHT"
         apply_browser_color_scheme "light"
         [[ -n "$SCRIPT_LIGHT" && -x "$SCRIPT_LIGHT" ]] && "$SCRIPT_LIGHT"
         dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.forceRefresh
@@ -770,7 +772,7 @@ do_configure() {
     # Select Splash Screens
     if [[ "$configure_all" == true || "$configure_splash" == true ]]; then
     echo ""
-    read -rp "When the theme switches, so will the splashscreen - would you like to overwrite it? [y/N]: " choice
+    read -rp "Configure splash screen override? [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for splash themes..."
         mapfile -t splash_themes < <(scan_splash_themes)
@@ -783,16 +785,26 @@ do_configure() {
         done
 
         echo ""
-        read -rp "Select splash theme to use for BOTH modes [1-$(( ${#splash_themes[@]} + 1 ))]: " choice
+        read -rp "Select ☀️ LIGHT mode splash theme [1-$(( ${#splash_themes[@]} + 1 ))]: " choice
         if [[ "$choice" == "1" ]]; then
-            SPLASH_OVERWRITE="None"
+            SPLASH_LIGHT="None"
         elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_themes[@]} + 1 )); then
-            SPLASH_OVERWRITE="${splash_themes[$((choice - 2))]}"
+            SPLASH_LIGHT="${splash_themes[$((choice - 2))]}"
         else
-            SPLASH_OVERWRITE=""
+            SPLASH_LIGHT=""
+        fi
+
+        read -rp "Select 🌙 DARK mode splash theme [1-$(( ${#splash_themes[@]} + 1 ))]: " choice
+        if [[ "$choice" == "1" ]]; then
+            SPLASH_DARK="None"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_themes[@]} + 1 )); then
+            SPLASH_DARK="${splash_themes[$((choice - 2))]}"
+        else
+            SPLASH_DARK=""
         fi
     else
-        SPLASH_OVERWRITE=""
+        SPLASH_LIGHT=""
+        SPLASH_DARK=""
     fi
     fi
 
@@ -818,7 +830,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "$KVANTUM_LIGHT" && -z "$KVANTUM_DARK" && -z "$ICON_LIGHT" && -z "$ICON_DARK" && -z "$GTK_LIGHT" && -z "$GTK_DARK" && -z "$KONSOLE_LIGHT" && -z "$KONSOLE_DARK" && -z "$SCRIPT_LIGHT" && -z "$SCRIPT_DARK" && -z "$SPLASH_OVERWRITE" ]]; then
+    if [[ -z "$KVANTUM_LIGHT" && -z "$KVANTUM_DARK" && -z "$ICON_LIGHT" && -z "$ICON_DARK" && -z "$GTK_LIGHT" && -z "$GTK_DARK" && -z "$KONSOLE_LIGHT" && -z "$KONSOLE_DARK" && -z "$SCRIPT_LIGHT" && -z "$SCRIPT_DARK" && -z "$SPLASH_LIGHT" && -z "$SPLASH_DARK" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -826,18 +838,19 @@ do_configure() {
 
     echo ""
     echo "Configuration summary:"
-    echo "   Splash overwrite: ${SPLASH_OVERWRITE:-disabled}"
     echo -e "☀️ Light theme: ${BOLD}$laf_light${RESET}"
     echo "    Kvantum: ${KVANTUM_LIGHT:-unchanged}"
     echo "    Icons: ${ICON_LIGHT:-unchanged}"
     echo "    GTK: ${GTK_LIGHT:-unchanged}"
     echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
+    echo "    Splash: ${SPLASH_LIGHT:-unchanged}"
     echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
     echo -e "🌙 Dark theme:  ${BOLD}$laf_dark${RESET}"
     echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
     echo "    Icons: ${ICON_DARK:-unchanged}"
     echo "    GTK: ${GTK_DARK:-unchanged}"
     echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
+    echo "    Splash: ${SPLASH_DARK:-unchanged}"
     echo "    Script: ${SCRIPT_DARK:-unchanged}"
 
     cat > "$CONFIG_FILE" <<EOF
@@ -852,7 +865,8 @@ GTK_LIGHT=$GTK_LIGHT
 GTK_DARK=$GTK_DARK
 KONSOLE_LIGHT=$KONSOLE_LIGHT
 KONSOLE_DARK=$KONSOLE_DARK
-SPLASH_OVERWRITE=$SPLASH_OVERWRITE
+SPLASH_LIGHT=$SPLASH_LIGHT
+SPLASH_DARK=$SPLASH_DARK
 SCRIPT_LIGHT=$SCRIPT_LIGHT
 SCRIPT_DARK=$SCRIPT_DARK
 EOF
@@ -1049,18 +1063,19 @@ do_status() {
         echo -e "${BOLD}Configuration ($CONFIG_FILE):${RESET}"
         # shellcheck source=/dev/null
         source "$CONFIG_FILE"
-        echo "   Splash overwrite: ${SPLASH_OVERWRITE:-disabled}"
         echo -e "☀️ Light theme: ${BOLD}$LAF_LIGHT${RESET}"
         echo "    Kvantum: ${KVANTUM_LIGHT:-unchanged}"
         echo "    Icons: ${ICON_LIGHT:-unchanged}"
         echo "    GTK: ${GTK_LIGHT:-unchanged}"
         echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
+        echo "    Splash: ${SPLASH_LIGHT:-unchanged}"
         echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
         echo -e "🌙 Dark theme:  ${BOLD}$LAF_DARK${RESET}"
         echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
         echo "    Icons: ${ICON_DARK:-unchanged}"
         echo "    GTK: ${GTK_DARK:-unchanged}"
         echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
+        echo "    Splash: ${SPLASH_DARK:-unchanged}"
         echo "    Script: ${SCRIPT_DARK:-unchanged}"
     else
         echo "Configuration: not installed"
