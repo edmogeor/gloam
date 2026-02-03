@@ -140,8 +140,35 @@ reload_laf_config() {
     # Silent reload as per request
 }
 
+apply_browser_color_scheme() {
+    local mode="$1"  # 'light' or 'dark'
+    local color_scheme portal_value
+
+    if [[ "$mode" == "dark" ]]; then
+        color_scheme="prefer-dark"
+        portal_value=1
+    else
+        color_scheme="prefer-light"
+        portal_value=0
+    fi
+
+    # Set gsettings color-scheme (browsers poll this)
+    if command -v gsettings &>/dev/null; then
+        gsettings set org.gnome.desktop.interface color-scheme "$color_scheme" 2>/dev/null || true
+    fi
+
+    # Emit XDG Desktop Portal signal for instant browser notification
+    dbus-send --session --type=signal \
+        /org/freedesktop/portal/desktop \
+        org.freedesktop.portal.Settings.SettingChanged \
+        string:'org.freedesktop.appearance' \
+        string:'color-scheme' \
+        "variant:uint32:$portal_value" 2>/dev/null || true
+}
+
 apply_gtk_theme() {
     local theme="$1"
+
     # Update GTK 3 settings
     mkdir -p "${HOME}/.config/gtk-3.0"
     sed -i "s/^gtk-theme-name=.*/gtk-theme-name=$theme/" "${HOME}/.config/gtk-3.0/settings.ini" 2>/dev/null || \
@@ -152,6 +179,12 @@ apply_gtk_theme() {
         echo -e "[Settings]\ngtk-theme-name=$theme" >> "${HOME}/.config/gtk-4.0/settings.ini"
     # Update via gsettings if available
     command -v gsettings &>/dev/null && gsettings set org.gnome.desktop.interface gtk-theme "$theme" 2>/dev/null || true
+
+    # Update xsettingsd if present (X11 fallback)
+    if [[ -f "${HOME}/.config/xsettingsd/xsettingsd.conf" ]]; then
+        sed -i "s/Net\/ThemeName \".*\"/Net\/ThemeName \"$theme\"/" "${HOME}/.config/xsettingsd/xsettingsd.conf" 2>/dev/null || true
+        pkill -HUP xsettingsd 2>/dev/null || true
+    fi
 }
 
 apply_konsole_profile() {
@@ -255,6 +288,7 @@ apply_theme() {
         [[ -n "$GTK_DARK" ]] && apply_gtk_theme "$GTK_DARK"
         [[ -n "$KONSOLE_DARK" ]] && apply_konsole_profile "$KONSOLE_DARK"
         apply_splash
+        apply_browser_color_scheme "dark"
         [[ -n "$SCRIPT_DARK" && -x "$SCRIPT_DARK" ]] && "$SCRIPT_DARK"
         dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.forceRefresh
         echo "[$(date)] Switched to 🌙 DARK mode"
@@ -267,6 +301,7 @@ apply_theme() {
         [[ -n "$GTK_LIGHT" ]] && apply_gtk_theme "$GTK_LIGHT"
         [[ -n "$KONSOLE_LIGHT" ]] && apply_konsole_profile "$KONSOLE_LIGHT"
         apply_splash
+        apply_browser_color_scheme "light"
         [[ -n "$SCRIPT_LIGHT" && -x "$SCRIPT_LIGHT" ]] && "$SCRIPT_LIGHT"
         dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.forceRefresh
         echo "[$(date)] Switched to ☀️ LIGHT mode"
