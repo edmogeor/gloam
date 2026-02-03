@@ -31,8 +31,7 @@ SHORTCUT_ID="plasma-daynight-toggle.desktop"
 
 show_laf_reminder() {
     echo -e "${YELLOW}Reminder:${RESET} Make sure your Day and Night themes are set to your preferred themes."
-    echo "You can set them in: System Settings > Colors & Themes > Global Theme"
-    echo "Click the ☀️/🌙 icons at the top-right to assign themes for each mode."
+    echo "You can set them in: System Settings > Quick Settings"
     echo ""
 }
 
@@ -530,28 +529,16 @@ do_toggle() {
 }
 
 clean_app_overrides() {
-    echo -e "${BLUE}Scanning for hardcoded application theme overrides...${RESET}"
-    local count=0
-    # Search for files in ~/.config (depth 1) containing common override keys
+    # Silently remove app-specific theme overrides so they follow the global theme
     # Keys: ColorScheme (Dolphin/Gwenview), Color Theme (Kate/KWrite)
     while read -r file; do
         [[ -f "$file" ]] || continue
         local filename=$(basename "$file")
-        # Skip global configs and our own config
         [[ "$filename" == "kdeglobals" || "$filename" == "plasma-daynight-sync.conf" ]] && continue
-        
-        if grep -qE "^(ColorScheme|Color Theme)=" "$file"; then
-            echo -e "  ${YELLOW}!${RESET} Removing theme override from ${BOLD}$filename${RESET}"
+        if grep -qE "^(ColorScheme|Color Theme)=" "$file" 2>/dev/null; then
             sed -i -E '/^(ColorScheme|Color Theme)=/d' "$file"
-            ((count++))
         fi
     done < <(find "${HOME}/.config" -maxdepth 1 -type f)
-
-    if [[ $count -eq 0 ]]; then
-        echo "  No hardcoded overrides detected."
-    else
-        echo -e "  ${GREEN}✓${RESET} Cleaned $count configuration files."
-    fi
 }
 
 do_configure() {
@@ -599,6 +586,16 @@ do_configure() {
     if [[ "$configure_all" == false && -f "$CONFIG_FILE" ]]; then
         # shellcheck source=/dev/null
         source "$CONFIG_FILE"
+    elif [[ "$configure_all" == true && -f "$CONFIG_FILE" ]]; then
+        echo -e "${YELLOW}Existing configuration found.${RESET}"
+        read -rp "Do you want to overwrite it? [y/N]: " choice
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
+            cleanup_stale
+        else
+            echo "Use configure options to modify specific settings (e.g. --kvantum, --gtk)."
+            echo "Run 'plasma-daynight-sync help' for available options."
+            exit 0
+        fi
     else
         cleanup_stale
     fi
