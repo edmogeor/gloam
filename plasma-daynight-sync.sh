@@ -92,16 +92,24 @@ scan_konsole_profiles() {
 }
 
 scan_splash_themes() {
-    local themes=()
+    local seen_ids=""
     for dir in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
         [[ -d "$dir" ]] || continue
         for theme_dir in "$dir"/*/; do
             [[ -d "${theme_dir}contents/splash" ]] || continue
-            themes+=("$(basename "$theme_dir")")
+            local id name
+            id="$(basename "$theme_dir")"
+            # Skip if already seen (user themes override system)
+            [[ "$seen_ids" == *"|$id|"* ]] && continue
+            seen_ids+="|$id|"
+            # Get friendly name from metadata.json
+            name=""
+            if [[ -f "${theme_dir}metadata.json" ]] && command -v jq &>/dev/null; then
+                name=$(jq -r '.KPlugin.Name // empty' "${theme_dir}metadata.json" 2>/dev/null)
+            fi
+            printf '%s|%s\n' "$id" "${name:-$id}"
         done
-    done
-    # Deduplicate and sort
-    printf '%s\n' "${themes[@]}" | sort -u
+    done | sort -t'|' -k2
 }
 
 install_plasmoid() {
@@ -775,30 +783,34 @@ do_configure() {
     read -rp "Configure splash screen override? [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for splash themes..."
-        mapfile -t splash_themes < <(scan_splash_themes)
+        local splash_ids=() splash_names=()
+        while IFS='|' read -r id name; do
+            splash_ids+=("$id")
+            splash_names+=("$name")
+        done < <(scan_splash_themes)
 
         echo ""
         echo -e "${BOLD}Available splash themes:${RESET}"
         printf "  ${BLUE}%3d)${RESET} %s\n" "1" "None (Disable splash screen)"
-        for i in "${!splash_themes[@]}"; do
-            printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 2))" "${splash_themes[$i]}"
+        for i in "${!splash_names[@]}"; do
+            printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 2))" "${splash_names[$i]}"
         done
 
         echo ""
-        read -rp "Select ☀️ LIGHT mode splash theme [1-$(( ${#splash_themes[@]} + 1 ))]: " choice
+        read -rp "Select ☀️ LIGHT mode splash theme [1-$(( ${#splash_ids[@]} + 1 ))]: " choice
         if [[ "$choice" == "1" ]]; then
             SPLASH_LIGHT="None"
-        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_themes[@]} + 1 )); then
-            SPLASH_LIGHT="${splash_themes[$((choice - 2))]}"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_ids[@]} + 1 )); then
+            SPLASH_LIGHT="${splash_ids[$((choice - 2))]}"
         else
             SPLASH_LIGHT=""
         fi
 
-        read -rp "Select 🌙 DARK mode splash theme [1-$(( ${#splash_themes[@]} + 1 ))]: " choice
+        read -rp "Select 🌙 DARK mode splash theme [1-$(( ${#splash_ids[@]} + 1 ))]: " choice
         if [[ "$choice" == "1" ]]; then
             SPLASH_DARK="None"
-        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_themes[@]} + 1 )); then
-            SPLASH_DARK="${splash_themes[$((choice - 2))]}"
+        elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 2 && choice <= ${#splash_ids[@]} + 1 )); then
+            SPLASH_DARK="${splash_ids[$((choice - 2))]}"
         else
             SPLASH_DARK=""
         fi
