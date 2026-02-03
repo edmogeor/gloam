@@ -127,13 +127,10 @@ Once configured and installed, the service runs in the background. You usually d
 
 To set up automatic day/night wallpaper switching:
 
-> [!IMPORTANT]
-> The wallpaper folder name and the `"Id"` field in `metadata.json` **must be a single word with no spaces** (e.g., `MyWallpaper`).
-
-1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure:
+1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure (Replace `WALLPAPER_NAME` with the name you want):
 
 ```
-~/.local/share/wallpapers/{WALLPAPER_NAME}/
+~/.local/share/wallpapers/WALLPAPER_NAME/
 ├── metadata.json
 └── contents/
     ├── images/          # Day wallpapers
@@ -146,7 +143,7 @@ To set up automatic day/night wallpaper switching:
         └── 7680x2160.png
 ```
 
-2. **Create the `metadata.json` file** [Make sure the Id field is one word with no spaces]:
+2. **Create the `metadata.json` file** (Make sure the Id field is one word with no spaces):
 
 ```json
 {
@@ -155,9 +152,9 @@ To set up automatic day/night wallpaper switching:
             {
             }
         ],
-        "Id": "{WALLPAPER_NAME}",
+        "Id": "WALLPAPER_NAME",
         "License": "CC-BY-SA-4.0",
-        "Name": "{WALLPAPER_NAME}"
+        "Name": "WALLPAPER_NAME"
     }
 }
 ```
