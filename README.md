@@ -127,7 +127,10 @@ Once configured and installed, the service runs in the background. You usually d
 
 To set up automatic day/night wallpaper switching:
 
-1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure (**Note:** The `{WALLPAPER_NAME}` must be a single word with no spaces):
+> [!IMPORTANT]
+> The wallpaper folder name and the `"Id"` field in `metadata.json` **must be a single word with no spaces** (e.g., `MyWallpaper`).
+
+1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure:
 
 ```
 ~/.local/share/wallpapers/{WALLPAPER_NAME}/
