@@ -127,10 +127,10 @@ Once configured and installed, the service runs in the background. You usually d
 
 To set up automatic day/night wallpaper switching:
 
-1. **Create a wallpaper folder** with the following structure:
+1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure:
 
 ```
-MyWallpaper/
+~/.local/share/wallpapers/{WALLPAPER_NAME}/
 ├── metadata.json
 └── contents/
     ├── images/          # Day wallpapers
@@ -152,9 +152,9 @@ MyWallpaper/
             {
             }
         ],
-        "Id": "MyWallpaper",
+        "Id": "{WALLPAPER_NAME}",
         "License": "CC-BY-SA-4.0",
-        "Name": "MyWallpaper"
+        "Name": "{WALLPAPER_NAME}"
     }
 }
 ```
@@ -165,10 +165,10 @@ MyWallpaper/
    - Name each file by its resolution (e.g., `1920x1080.png`)
    - KDE will automatically select the appropriate resolution for each display
 
-4. **Install the wallpaper:**
+4. **Select the wallpaper:**
    - Open System Settings > Wallpaper
-   - **Drag and drop** the wallpaper folder onto the settings page (the file picker doesn't support selecting directories)
-   - Select your new dynamic wallpaper
+   - Your new wallpaper should appear in the list
+   - Select it to enable automatic day/night switching
 
 KDE will automatically switch between day and night wallpapers based on your Day/Night mode settings.
 
