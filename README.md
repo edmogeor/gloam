@@ -1,7 +1,7 @@
 # Plasma Day/Night Sync
 
 <div align="center">
-  <video src="screenshots/example.mp4" width="800" controls></video>
+  <img src="screenshots/example.gif" width="800" />
 </div>
 
 **Plasma Day/Night Sync** is a robust theme switcher for the KDE Plasma desktop environment. It hooks into KDE's built-in Light/Dark mode switcher to automatically synchronize theme components that otherwise wouldn't get switched, such as Kvantum themes, GTK themes, Icon sets, Konsole profiles, and even custom scripts.
