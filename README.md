@@ -4,20 +4,24 @@
   <img src="screenshots/example.gif" width="800" />
 </div>
 
-**Plasma Day/Night Sync** is a robust theme switcher for the KDE Plasma desktop environment. It hooks into KDE's built-in Day/Night mode switcher to automatically synchronize theme components that otherwise wouldn't get switched, or that you want to override with different options than the theme provides. Supports Kvantum themes, color schemes, GTK themes, Icon sets, Konsole profiles, and custom scripts.
+**Plasma Day/Night Sync** is a robust theme switcher for the KDE Plasma desktop environment. It hooks into KDE's built-in Day/Night mode switcher to automatically synchronize theme components that otherwise wouldn't get switched, or that you want to override with different options than the theme provides. Supports Kvantum themes, Plasma styles, window decorations, color schemes, cursor themes, GTK themes, icon sets, Konsole profiles, and custom scripts.
 
 It runs as a background service (systemd user unit) to ensure your desktop experience is consistent whenever you toggle the global theme via Quick Settings or when KDE switches the theme automatically.
 
 ## Features
 
 -   **Kvantum Integration:** Automatically switches Kvantum themes (useful for application styling).
+-   **Plasma Style Sync:** Switches Plasma desktop themes (panel, widgets appearance).
+-   **Window Decorations:** Changes window title bar styles for Day/Night modes.
 -   **Color Scheme Sync:** Switches Plasma color schemes for Day/Night modes.
+-   **Cursor Theme Sync:** Changes cursor themes for Day/Night modes.
+-   **Icon Theme Sync:** Changes icon packs for Day/Night modes.
 -   **GTK Theme Sync:** Updates GTK 3/4 themes to match your Plasma preference.
 -   **Flatpak Support:** Automatically applies GTK and Kvantum themes to Flatpak apps, with icon support.
--   **Icon Theme Sync:** Changes icon packs for Day/Night modes.
 -   **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
 -   **Splash Screen:** Optionally overrides or changes the splash screen.
 -   **Custom Scripts:** Run arbitrary scripts when switching to Day or Night mode.
+-   **System-wide Setup:** Optionally apply settings to all users on the system.
 -   **Systemd Service:** Installs a user-level systemd service to watch for changes automatically.
 -   **Panel Widget:** Optional Day/Night Toggle widget for your panel.
 -   **Keyboard Shortcut:** Toggle themes with Meta+Shift+L (customizable in System Settings > Shortcuts).
@@ -65,12 +69,13 @@ flatpak install org.kde.KStyle.Kvantum
     ```
 
 The `configure` command will:
--   Scan your system for available Kvantum themes, GTK themes, Icons, etc.
+-   Scan your system for available themes (Kvantum, Plasma styles, window decorations, color schemes, cursors, icons, GTK, etc.).
 -   Ask you to select which ones to use for **Day Mode** and **Night Mode**.
 -   Detect your current Plasma Day/Night global themes.
 -   Install the script to `~/.local/bin/` (optional).
 -   Install the Day/Night Toggle panel widget (optional).
 -   Add a keyboard shortcut (Meta+Shift+L) for quick toggling (optional).
+-   Apply settings to all users on the system (optional, requires sudo).
 -   Create and enable a systemd user service (`plasma-daynight-sync.service`).
 
 ### Partial Re-configuration
@@ -78,15 +83,19 @@ The `configure` command will:
 You can re-configure specific components without going through the whole wizard:
 
 ```bash
-./plasma-daynight-sync.sh configure --kvantum    # Only re-configure Kvantum
-./plasma-daynight-sync.sh configure --colors     # Only re-configure Color Schemes
-./plasma-daynight-sync.sh configure --icons      # Only re-configure Icons
-./plasma-daynight-sync.sh configure --gtk        # Only re-configure GTK
-./plasma-daynight-sync.sh configure --konsole    # Only re-configure Konsole
-./plasma-daynight-sync.sh configure --splash     # Only re-configure Splash Screen
-./plasma-daynight-sync.sh configure --script     # Only re-configure Custom Scripts
-./plasma-daynight-sync.sh configure --widget     # Install/reinstall panel widget
-./plasma-daynight-sync.sh configure --shortcut   # Install/reinstall keyboard shortcut
+./plasma-daynight-sync.sh configure --kvantum      # Only re-configure Kvantum
+./plasma-daynight-sync.sh configure --style        # Only re-configure Plasma Style
+./plasma-daynight-sync.sh configure --decorations  # Only re-configure Window Decorations
+./plasma-daynight-sync.sh configure --colors       # Only re-configure Color Schemes
+./plasma-daynight-sync.sh configure --cursors      # Only re-configure Cursors
+./plasma-daynight-sync.sh configure --icons        # Only re-configure Icons
+./plasma-daynight-sync.sh configure --gtk          # Only re-configure GTK
+./plasma-daynight-sync.sh configure --konsole      # Only re-configure Konsole
+./plasma-daynight-sync.sh configure --splash       # Only re-configure Splash Screen
+./plasma-daynight-sync.sh configure --script       # Only re-configure Custom Scripts
+./plasma-daynight-sync.sh configure --widget       # Install/reinstall panel widget
+./plasma-daynight-sync.sh configure --shortcut     # Install/reinstall keyboard shortcut
+./plasma-daynight-sync.sh configure --all-users    # Apply settings to all users
 ```
 
 ## Usage
