@@ -779,7 +779,7 @@ do_configure() {
     if [[ "$configure_all" == true || "$configure_kvantum" == true ]]; then
     echo ""
     local choice
-    read -rp "Configure Kvantum themes? [y/N]: " choice
+    read -rp "Configure Kvantum themes? (not automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for Kvantum themes..."
         mapfile -t themes < <(scan_kvantum_themes)
@@ -826,7 +826,7 @@ do_configure() {
     # Select Plasma Styles
     if [[ "$configure_all" == true || "$configure_style" == true ]]; then
     echo ""
-    read -rp "Configure Plasma styles? [y/N]: " choice
+    read -rp "Configure Plasma styles? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for Plasma styles..."
         mapfile -t plasma_styles < <(scan_plasma_styles)
@@ -868,7 +868,7 @@ do_configure() {
     # Select Window Decorations
     if [[ "$configure_all" == true || "$configure_decorations" == true ]]; then
     echo ""
-    read -rp "Configure window decorations? [y/N]: " choice
+    read -rp "Configure window decorations? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for window decorations..."
         local decoration_ids=() decoration_names=()
@@ -914,7 +914,7 @@ do_configure() {
     # Select Color Schemes
     if [[ "$configure_all" == true || "$configure_colors" == true ]]; then
     echo ""
-    read -rp "Configure color schemes? [y/N]: " choice
+    read -rp "Configure color schemes? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for color schemes..."
         mapfile -t color_schemes < <(scan_color_schemes)
@@ -956,7 +956,7 @@ do_configure() {
     # Select icon themes
     if [[ "$configure_all" == true || "$configure_icons" == true ]]; then
     echo ""
-    read -rp "Configure icon themes? [y/N]: " choice
+    read -rp "Configure icon themes? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         # Check common locations first
         for path in /usr/lib/plasma-changeicons /usr/libexec/plasma-changeicons /usr/lib64/plasma-changeicons; do
@@ -1033,7 +1033,7 @@ do_configure() {
     # Select Cursor themes
     if [[ "$configure_all" == true || "$configure_cursors" == true ]]; then
     echo ""
-    read -rp "Configure cursor themes? [y/N]: " choice
+    read -rp "Configure cursor themes? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for cursor themes..."
         mapfile -t cursor_themes < <(scan_cursor_themes)
@@ -1075,7 +1075,7 @@ do_configure() {
     # Select GTK/Flatpak themes
     if [[ "$configure_all" == true || "$configure_gtk" == true ]]; then
     echo ""
-    read -rp "Configure GTK/Flatpak themes? [y/N]: " choice
+    read -rp "Configure GTK/Flatpak themes? (not automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for GTK themes..."
         mapfile -t gtk_themes < <(scan_gtk_themes)
@@ -1121,7 +1121,7 @@ do_configure() {
     # Select Konsole profiles
     if [[ "$configure_all" == true || "$configure_konsole" == true ]]; then
     echo ""
-    read -rp "Configure Konsole profiles? [y/N]: " choice
+    read -rp "Configure Konsole profiles? (not automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for Konsole profiles..."
         mapfile -t konsole_profiles < <(scan_konsole_profiles)
@@ -1163,7 +1163,7 @@ do_configure() {
     # Select Splash Screens
     if [[ "$configure_all" == true || "$configure_splash" == true ]]; then
     echo ""
-    read -rp "Configure splash screen override? [y/N]: " choice
+    read -rp "Configure splash screen override? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for splash themes..."
         local splash_ids=() splash_names=()
