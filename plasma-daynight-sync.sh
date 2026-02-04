@@ -46,18 +46,18 @@ get_friendly_name() {
             ;;
         decoration)
             if [[ "$id" == "__aurorae__svg__"* ]]; then
-                local theme_name="${id#__aurorae__svg__}"
-                for dir in /usr/share/aurorae/themes "${HOME}/.local/share/aurorae/themes"; do
-                    if [[ -f "${dir}/${theme_name}/metadata.desktop" ]]; then
-                        grep -m1 "^Name=" "${dir}/${theme_name}/metadata.desktop" 2>/dev/null | cut -d= -f2 && return 0
+                # Aurorae themes - strip prefix
+                echo "${id#__aurorae__svg__}" && return 0
+            elif [[ "$id" == "kwin4_decoration_qml_"* ]]; then
+                # KPackage/QML decorations - look up name or strip prefix
+                for dir in /usr/share/kwin/decorations "${HOME}/.local/share/kwin/decorations"; do
+                    if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
+                        jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
                     fi
                 done
-                echo "$theme_name" && return 0
-            elif [[ "$id" == "org.kde.breeze" ]]; then echo "Breeze" && return 0
-            elif [[ "$id" == "org.kde.oxygen" ]]; then echo "Oxygen" && return 0
-            elif [[ "$id" == "org.kde.plastik" ]]; then echo "Plastik" && return 0
-            elif [[ "$id" == "org.kde.kwin.aurorae" ]]; then echo "Aurorae" && return 0
+                echo "${id#kwin4_decoration_qml_}" && return 0
             fi
+            # Simple names like "Breeze", "Oxygen" - return as-is
             ;;
         splash)
             [[ "$id" == "None" ]] && echo "None" && return 0
@@ -107,44 +107,18 @@ scan_icon_themes() {
 }
 
 scan_cursor_themes() {
-    local themes=()
-    for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
-        [[ -d "$dir" ]] || continue
-        for theme_dir in "$dir"/*/; do
-            [[ -d "${theme_dir}cursors" ]] || continue
-            themes+=("$(basename "$theme_dir")")
-        done
-    done
-    # Deduplicate and sort
-    printf '%s\n' "${themes[@]}" | sort -u
+    # Use KDE's tool to list cursor themes
+    # Parse output like: " * Breeze Light [Breeze_Light]"
+    plasma-apply-cursortheme --list-themes 2>/dev/null | \
+        sed -n 's/.*\* \(.*\) \[\(.*\)\].*/\2|\1/p'
 }
 
 scan_window_decorations() {
-    local seen_ids=""
-    # Aurorae themes
-    for dir in /usr/share/aurorae/themes "${HOME}/.local/share/aurorae/themes"; do
-        [[ -d "$dir" ]] || continue
-        for theme_dir in "$dir"/*/; do
-            [[ -f "${theme_dir}metadata.desktop" || -f "${theme_dir}aurorae.theme" ]] || continue
-            local id name
-            id="__aurorae__svg__$(basename "$theme_dir")"
-            [[ "$seen_ids" == *"|$id|"* ]] && continue
-            seen_ids+="|$id|"
-            
-            # Use centralized function for name
-            name=$(get_friendly_name decoration "$id")
-            printf '%s|%s\n' "$id" "$name"
-        done
-    done
-    # Built-in decorations (check if plugin exists)
-    for plugin_dir in /usr/lib/qt6/plugins/org.kde.kdecoration2 /usr/lib64/qt6/plugins/org.kde.kdecoration2 /usr/lib/x86_64-linux-gnu/qt6/plugins/org.kde.kdecoration2; do
-        [[ -d "$plugin_dir" ]] || continue
-        [[ -f "$plugin_dir/org.kde.breeze.so" || -f "$plugin_dir/breeze.so" ]] && printf '%s|%s\n' "org.kde.breeze" "$(get_friendly_name decoration "org.kde.breeze")"
-        [[ -f "$plugin_dir/org.kde.oxygen.so" || -f "$plugin_dir/oxygen.so" ]] && printf '%s|%s\n' "org.kde.oxygen" "$(get_friendly_name decoration "org.kde.oxygen")"
-        [[ -f "$plugin_dir/org.kde.plastik.so" || -f "$plugin_dir/plastik.so" ]] && printf '%s|%s\n' "org.kde.plastik" "$(get_friendly_name decoration "org.kde.plastik")"
-        [[ -f "$plugin_dir/org.kde.kwin.aurorae.so" || -f "$plugin_dir/kwin_aurorae.so" ]] && printf '%s|%s\n' "org.kde.kwin.aurorae" "$(get_friendly_name decoration "org.kde.kwin.aurorae")"
-        break
-    done
+    # Use KDE's tool to list all available window decorations
+    # Parse output like: " * Plastik (theme name: kwin4_decoration_qml_plastik)"
+    /usr/lib/kwin-applywindowdecoration --list-themes 2>/dev/null | \
+        sed -n 's/.*\* \(.*\) (theme name: \([^)]*\)).*/\2|\1/p' | \
+        sed 's/ - current theme for this Plasma session//'
 }
 
 
@@ -197,7 +171,7 @@ scan_splash_themes() {
 
 scan_color_schemes() {
     local schemes=()
-    for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes" /run/current-system/profile/share/color-schemes; do
+    for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes"; do
         [[ -d "$dir" ]] || continue
         for scheme in "$dir"/*.colors; do
             [[ -f "$scheme" ]] || continue
@@ -209,16 +183,19 @@ scan_color_schemes() {
 }
 
 scan_plasma_styles() {
-    local styles=()
+    local seen_ids=""
     for dir in /usr/share/plasma/desktoptheme "${HOME}/.local/share/plasma/desktoptheme"; do
         [[ -d "$dir" ]] || continue
         for style_dir in "$dir"/*/; do
             [[ -f "${style_dir}metadata.json" || -f "${style_dir}metadata.desktop" ]] || continue
-            styles+=("$(basename "$style_dir")")
+            local id
+            id="$(basename "$style_dir")"
+            [[ "$id" == "default" ]] && continue
+            [[ "$seen_ids" == *"|$id|"* ]] && continue
+            seen_ids+="|$id|"
+            printf '%s\n' "$id"
         done
-    done
-    # Deduplicate and sort
-    printf '%s\n' "${styles[@]}" | sort -u
+    done | sort
 }
 
 install_plasmoid() {
@@ -469,13 +446,7 @@ apply_cursor_theme() {
 
 apply_window_decoration() {
     local decoration="$1"
-    kwriteconfig6 --file kwinrc --group org.kde.kdecoration2 --key theme "$decoration"
-    # Reconfigure KWin to apply the change
-    if command -v qdbus6 &>/dev/null; then
-        qdbus6 org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-    elif command -v qdbus &>/dev/null; then
-        qdbus org.kde.KWin /KWin reconfigure >/dev/null 2>&1 || true
-    fi
+    /usr/lib/kwin-applywindowdecoration "$decoration" >/dev/null 2>&1 || true
 }
 
 
@@ -486,6 +457,8 @@ refresh_kvantum_style() {
 
 apply_theme() {
     local laf="$1"
+    # Wait for LookAndFeel to finish applying before overriding settings
+    sleep 1
     if [[ "$laf" == "$LAF_NIGHT" ]]; then
         if [[ -n "$KVANTUM_NIGHT" ]]; then
             kvantummanager --set "$KVANTUM_NIGHT"
@@ -787,27 +760,28 @@ do_configure() {
     read -rp "Configure Plasma styles? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for Plasma styles..."
-        mapfile -t plasma_styles < <(scan_plasma_styles)
+        local style_ids=()
+        mapfile -t style_ids < <(scan_plasma_styles)
 
-        if [[ ${#plasma_styles[@]} -eq 0 ]]; then
+        if [[ ${#style_ids[@]} -eq 0 ]]; then
             echo "No Plasma styles found, skipping."
             STYLE_DAY=""
             STYLE_NIGHT=""
         else
             echo ""
             echo -e "${BOLD}Available Plasma styles:${RESET}"
-            for i in "${!plasma_styles[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${plasma_styles[$i]}"
+            for i in "${!style_ids[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${style_ids[$i]}"
             done
 
             echo ""
-            read -rp "Select ☀️ DAY mode Plasma style [1-${#plasma_styles[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#plasma_styles[@]} )); then
-                STYLE_DAY="${plasma_styles[$((choice - 1))]}"
+            read -rp "Select ☀️ DAY mode Plasma style [1-${#style_ids[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#style_ids[@]} )); then
+                STYLE_DAY="${style_ids[$((choice - 1))]}"
 
-                read -rp "Select 🌙 NIGHT mode Plasma style [1-${#plasma_styles[@]}]: " choice
-                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#plasma_styles[@]} )); then
-                    STYLE_NIGHT="${plasma_styles[$((choice - 1))]}"
+                read -rp "Select 🌙 NIGHT mode Plasma style [1-${#style_ids[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#style_ids[@]} )); then
+                    STYLE_NIGHT="${style_ids[$((choice - 1))]}"
                 else
                     STYLE_DAY=""
                     STYLE_NIGHT=""
@@ -976,27 +950,31 @@ do_configure() {
     read -rp "Configure cursor themes? (normally automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for cursor themes..."
-        mapfile -t cursor_themes < <(scan_cursor_themes)
+        local cursor_ids=() cursor_names=()
+        while IFS='|' read -r id name; do
+            cursor_ids+=("$id")
+            cursor_names+=("$name")
+        done < <(scan_cursor_themes)
 
-        if [[ ${#cursor_themes[@]} -eq 0 ]]; then
+        if [[ ${#cursor_ids[@]} -eq 0 ]]; then
             echo "No cursor themes found, skipping."
             CURSOR_DAY=""
             CURSOR_NIGHT=""
         else
             echo ""
             echo -e "${BOLD}Available cursor themes:${RESET}"
-            for i in "${!cursor_themes[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${cursor_themes[$i]}"
+            for i in "${!cursor_names[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${cursor_names[$i]}"
             done
 
             echo ""
-            read -rp "Select ☀️ DAY mode cursor theme [1-${#cursor_themes[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_themes[@]} )); then
-                CURSOR_DAY="${cursor_themes[$((choice - 1))]}"
+            read -rp "Select ☀️ DAY mode cursor theme [1-${#cursor_ids[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_ids[@]} )); then
+                CURSOR_DAY="${cursor_ids[$((choice - 1))]}"
 
-                read -rp "Select 🌙 NIGHT mode cursor theme [1-${#cursor_themes[@]}]: " choice
-                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_themes[@]} )); then
-                    CURSOR_NIGHT="${cursor_themes[$((choice - 1))]}"
+                read -rp "Select 🌙 NIGHT mode cursor theme [1-${#cursor_ids[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#cursor_ids[@]} )); then
+                    CURSOR_NIGHT="${cursor_ids[$((choice - 1))]}"
                 else
                     CURSOR_DAY=""
                     CURSOR_NIGHT=""
@@ -1165,7 +1143,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "$KVANTUM_DAY" && -z "$KVANTUM_NIGHT" && -z "$STYLE_DAY" && -z "$STYLE_NIGHT" && -z "$DECORATION_DAY" && -z "$DECORATION_NIGHT" && -z "$COLOR_DAY" && -z "$COLOR_NIGHT" && -z "$ICON_DAY" && -z "$ICON_NIGHT" && -z "$CURSOR_DAY" && -z "$CURSOR_NIGHT" && -z "$GTK_DAY" && -z "$GTK_NIGHT" && -z "$KONSOLE_DAY" && -z "$KONSOLE_NIGHT" && -z "$SPLASH_DAY" && -z "$SPLASH_NIGHT" && -z "$SCRIPT_DAY" && -z "$SCRIPT_NIGHT" ]]; then
+    if [[ -z "${KVANTUM_DAY:-}" && -z "${KVANTUM_NIGHT:-}" && -z "${STYLE_DAY:-}" && -z "${STYLE_NIGHT:-}" && -z "${DECORATION_DAY:-}" && -z "${DECORATION_NIGHT:-}" && -z "${COLOR_DAY:-}" && -z "${COLOR_NIGHT:-}" && -z "${ICON_DAY:-}" && -z "${ICON_NIGHT:-}" && -z "${CURSOR_DAY:-}" && -z "${CURSOR_NIGHT:-}" && -z "${GTK_DAY:-}" && -z "${GTK_NIGHT:-}" && -z "${KONSOLE_DAY:-}" && -z "${KONSOLE_NIGHT:-}" && -z "${SPLASH_DAY:-}" && -z "${SPLASH_NIGHT:-}" && -z "${SCRIPT_DAY:-}" && -z "${SCRIPT_NIGHT:-}" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -1176,7 +1154,7 @@ do_configure() {
     echo -e "☀️ Day theme: ${BOLD}$(get_friendly_name laf "$laf_day")${RESET}"
     echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
     echo "    Style: ${STYLE_DAY:-unchanged}"
-    echo "    Decorations: $(get_friendly_name decoration "${DECORATION_DAY:-}")"
+    echo "    Decorations: $([[ -n "${DECORATION_DAY:-}" ]] && get_friendly_name decoration "$DECORATION_DAY" || echo "unchanged")"
     echo "    Colors: ${COLOR_DAY:-unchanged}"
     echo "    Icons: ${ICON_DAY:-unchanged}"
     echo "    Cursors: ${CURSOR_DAY:-unchanged}"
@@ -1187,7 +1165,7 @@ do_configure() {
     echo -e "🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$laf_night")${RESET}"
     echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
     echo "    Style: ${STYLE_NIGHT:-unchanged}"
-    echo "    Decorations: $(get_friendly_name decoration "${DECORATION_NIGHT:-}")"
+    echo "    Decorations: $([[ -n "${DECORATION_NIGHT:-}" ]] && get_friendly_name decoration "$DECORATION_NIGHT" || echo "unchanged")"
     echo "    Colors: ${COLOR_NIGHT:-unchanged}"
     echo "    Icons: ${ICON_NIGHT:-unchanged}"
     echo "    Cursors: ${CURSOR_NIGHT:-unchanged}"
@@ -1199,27 +1177,27 @@ do_configure() {
     cat > "$CONFIG_FILE" <<EOF
 LAF_DAY=$laf_day
 LAF_NIGHT=$laf_night
-KVANTUM_DAY=$KVANTUM_DAY
-KVANTUM_NIGHT=$KVANTUM_NIGHT
-ICON_DAY=$ICON_DAY
-ICON_NIGHT=$ICON_NIGHT
-PLASMA_CHANGEICONS=$PLASMA_CHANGEICONS
-GTK_DAY=$GTK_DAY
-GTK_NIGHT=$GTK_NIGHT
-COLOR_DAY=$COLOR_DAY
-COLOR_NIGHT=$COLOR_NIGHT
-STYLE_DAY=$STYLE_DAY
-STYLE_NIGHT=$STYLE_NIGHT
-DECORATION_DAY=$DECORATION_DAY
-DECORATION_NIGHT=$DECORATION_NIGHT
-CURSOR_DAY=$CURSOR_DAY
-CURSOR_NIGHT=$CURSOR_NIGHT
-KONSOLE_DAY=$KONSOLE_DAY
-KONSOLE_NIGHT=$KONSOLE_NIGHT
-SPLASH_DAY=$SPLASH_DAY
-SPLASH_NIGHT=$SPLASH_NIGHT
-SCRIPT_DAY=$SCRIPT_DAY
-SCRIPT_NIGHT=$SCRIPT_NIGHT
+KVANTUM_DAY=${KVANTUM_DAY:-}
+KVANTUM_NIGHT=${KVANTUM_NIGHT:-}
+ICON_DAY=${ICON_DAY:-}
+ICON_NIGHT=${ICON_NIGHT:-}
+PLASMA_CHANGEICONS=${PLASMA_CHANGEICONS:-}
+GTK_DAY=${GTK_DAY:-}
+GTK_NIGHT=${GTK_NIGHT:-}
+COLOR_DAY=${COLOR_DAY:-}
+COLOR_NIGHT=${COLOR_NIGHT:-}
+STYLE_DAY=${STYLE_DAY:-}
+STYLE_NIGHT=${STYLE_NIGHT:-}
+DECORATION_DAY=${DECORATION_DAY:-}
+DECORATION_NIGHT=${DECORATION_NIGHT:-}
+CURSOR_DAY=${CURSOR_DAY:-}
+CURSOR_NIGHT=${CURSOR_NIGHT:-}
+KONSOLE_DAY=${KONSOLE_DAY:-}
+KONSOLE_NIGHT=${KONSOLE_NIGHT:-}
+SPLASH_DAY=${SPLASH_DAY:-}
+SPLASH_NIGHT=${SPLASH_NIGHT:-}
+SCRIPT_DAY=${SCRIPT_DAY:-}
+SCRIPT_NIGHT=${SCRIPT_NIGHT:-}
 EOF
 
     # Install globally?
@@ -1239,8 +1217,8 @@ EOF
             echo "Run 'plasma-daynight-sync configure' first to install globally." >&2
             exit 1
         fi
-        # Update the script
-        cp "$0" "$CLI_PATH"
+        # Update the script (skip if same file)
+        [[ "$(realpath "$0")" != "$(realpath "$CLI_PATH")" ]] && cp "$0" "$CLI_PATH"
         chmod +x "$CLI_PATH"
 
         if [[ "$configure_widget" == true ]]; then
@@ -1254,7 +1232,7 @@ EOF
 
     # Skip install prompts if partial reconfigure and already installed
     if [[ "$configure_all" == false && "$installed_globally" == true ]]; then
-        cp "$0" "$CLI_PATH"
+        [[ "$(realpath "$0")" != "$(realpath "$CLI_PATH")" ]] && cp "$0" "$CLI_PATH"
         chmod +x "$CLI_PATH"
         executable_path="$CLI_PATH"
     elif [[ "$configure_all" == true ]]; then
@@ -1262,7 +1240,7 @@ EOF
         read -rp "Do you want to install 'plasma-daynight-sync' globally to ~/.local/bin? [y/N]: " choice
         if [[ "$choice" =~ ^[Yy]$ ]]; then
             mkdir -p "$(dirname "$CLI_PATH")"
-            cp "$0" "$CLI_PATH"
+            [[ "$(realpath "$0")" != "$(realpath "$CLI_PATH" 2>/dev/null)" ]] && cp "$0" "$CLI_PATH"
             chmod +x "$CLI_PATH"
             executable_path="$CLI_PATH"
             installed_globally=true
@@ -1302,6 +1280,8 @@ Description=Plasma auto theme watcher (Kvantum switcher)
 ExecStart=$executable_path watch
 Restart=on-failure
 RestartSec=5
+Environment=DISPLAY=${DISPLAY:-:0}
+Environment=WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0}
 
 [Install]
 WantedBy=default.target
@@ -1417,7 +1397,7 @@ do_status() {
         echo -e "☀️ Day theme: ${BOLD}$(get_friendly_name laf "$LAF_DAY")${RESET} ($LAF_DAY)"
         echo "    Kvantum: ${KVANTUM_DAY:-unchanged}"
         echo "    Style: ${STYLE_DAY:-unchanged}"
-        echo "    Decorations: $(get_friendly_name decoration "${DECORATION_DAY:-}")"
+        echo "    Decorations: $([[ -n "${DECORATION_DAY:-}" ]] && get_friendly_name decoration "$DECORATION_DAY" || echo "unchanged")"
         echo "    Colors: ${COLOR_DAY:-unchanged}"
         echo "    Icons: ${ICON_DAY:-unchanged}"
         echo "    Cursors: ${CURSOR_DAY:-unchanged}"
@@ -1428,7 +1408,7 @@ do_status() {
         echo -e "🌙 Night theme:  ${BOLD}$(get_friendly_name laf "$LAF_NIGHT")${RESET} ($LAF_NIGHT)"
         echo "    Kvantum: ${KVANTUM_NIGHT:-unchanged}"
         echo "    Style: ${STYLE_NIGHT:-unchanged}"
-        echo "    Decorations: $(get_friendly_name decoration "${DECORATION_NIGHT:-}")"
+        echo "    Decorations: $([[ -n "${DECORATION_NIGHT:-}" ]] && get_friendly_name decoration "$DECORATION_NIGHT" || echo "unchanged")"
         echo "    Colors: ${COLOR_NIGHT:-unchanged}"
         echo "    Icons: ${ICON_NIGHT:-unchanged}"
         echo "    Cursors: ${CURSOR_NIGHT:-unchanged}"
