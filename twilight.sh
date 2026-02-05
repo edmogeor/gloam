@@ -826,13 +826,16 @@ generate_custom_theme() {
     fi
 
     # Update metadata.json with new ID and name, preserving original authors
-    local original_authors
-    original_authors=$(python3 -c "
-import json, sys
-with open(sys.argv[1]) as f:
-    d = json.load(f)
-print(json.dumps(d.get('KPlugin', {}).get('Authors', [{'Name': 'Unknown'}])))
-" "${base_theme_dir}/metadata.json" 2>/dev/null) || original_authors='[{ "Name": "Unknown" }]'
+    local author_block author_name author_email original_authors
+    author_block=$(awk '/"Authors"/,/\]/' "${base_theme_dir}/metadata.json" 2>/dev/null) || true
+    author_name=$(echo "$author_block" | grep -m1 '"Name"[[:space:]]*:' | sed 's/.*"Name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
+    author_email=$(echo "$author_block" | grep -m1 '"Email"[[:space:]]*:' | sed 's/.*"Email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
+    [[ -z "$author_name" ]] && author_name="Unknown"
+    if [[ -n "$author_email" ]]; then
+        original_authors='[{ "Email": "'"$author_email"'", "Name": "'"$author_name"'" }]'
+    else
+        original_authors='[{ "Name": "'"$author_name"'" }]'
+    fi
 
     local metadata
     metadata=$(cat <<METADATA
