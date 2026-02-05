@@ -1112,7 +1112,7 @@ load_config_strict() {
 }
 
 do_light() {
-    [[ -z "${LAF_LIGHT:-}" ]] && load_config_strict
+    load_config_strict
     # Save auto mode state before plasma-apply-lookandfeel disables it
     local auto_mode
     auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
@@ -1134,7 +1134,7 @@ do_light() {
 }
 
 do_dark() {
-    [[ -z "${LAF_DARK:-}" ]] && load_config_strict
+    load_config_strict
     # Save auto mode state before plasma-apply-lookandfeel disables it
     local auto_mode
     auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
