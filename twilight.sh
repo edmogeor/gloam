@@ -1819,10 +1819,10 @@ do_configure() {
         laf_light="$CUSTOM_THEME_LIGHT"
         laf_dark="$CUSTOM_THEME_DARK"
 
-        # Apply the appropriate theme with all sub-themes
+        # Apply the appropriate custom theme to match the user's current mode
         local current_laf
         current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage 2>/dev/null)
-        if [[ "$current_laf" == "org.kde.custom.dark" || "$current_laf" == *"dark"* || "$current_laf" == *"Dark"* ]]; then
+        if [[ "$current_laf" == "$CUSTOM_THEME_DARK" || "$current_laf" == "$BASE_THEME_DARK" ]]; then
             LAF_DARK="$laf_dark"
             do_dark
         else
@@ -1858,12 +1858,10 @@ do_configure() {
                 laf_light="$CUSTOM_THEME_LIGHT"
                 laf_dark="$CUSTOM_THEME_DARK"
 
-                # Apply the appropriate theme with all sub-themes
-                local current_is_dark=false
+                # Apply the appropriate custom theme to match the user's current mode
                 local current_laf
                 current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage 2>/dev/null)
-                [[ "$current_laf" == *"dark"* || "$current_laf" == *"Dark"* ]] && current_is_dark=true
-                if [[ "$current_is_dark" == true ]]; then
+                if [[ "$current_laf" == "$BASE_THEME_DARK" ]]; then
                     LAF_DARK="$laf_dark"
                     do_dark
                 else
