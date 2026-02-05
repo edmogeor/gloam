@@ -1210,7 +1210,7 @@ do_configure() {
             -C|--cursors)       configure_cursors=true; configure_all=false ;;
             -w|--widget)        configure_widget=true; configure_all=false ;;
             -K|--shortcut)      configure_shortcut=true; configure_all=false ;;
-            -h|--help)          show_configure_help; exit 0 ;;
+            help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
                 echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -w|--widget -K|--shortcut" >&2
