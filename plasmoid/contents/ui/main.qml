@@ -1,5 +1,5 @@
 /*
- * Day/Night Toggle Plasmoid for plasma-daynight-sync
+ * Light/Dark Mode Toggle Plasmoid for twilight
  * SPDX-License-Identifier: GPL-3.0
  */
 import QtQuick
@@ -21,7 +21,7 @@ PlasmoidItem {
         || Plasmoid.location === PlasmaCore.Types.LeftEdge)
 
     Plasmoid.icon: isDarkMode ? "weather-clear-night" : "weather-clear"
-    toolTipMainText: isDarkMode ? "Night Mode" : "Day Mode"
+    toolTipMainText: isDarkMode ? "Dark Mode" : "Light Mode"
     toolTipSubText: "Click to toggle"
 
     Plasmoid.onActivated: toggleMode()
@@ -31,7 +31,7 @@ PlasmoidItem {
         modeWatcher.running = true
     }
 
-    // Read mode from status file (written by plasma-daynight-sync script)
+    // Read mode from status file (written by twilight script)
     Plasma5Support.DataSource {
         id: modeReader
         engine: "executable"
@@ -39,9 +39,9 @@ PlasmoidItem {
 
         onNewData: (sourceName, data) => {
             var mode = data["stdout"].trim()
-            if (mode === "night") {
+            if (mode === "dark") {
                 root.isDarkMode = true
-            } else if (mode === "day") {
+            } else if (mode === "light") {
                 root.isDarkMode = false
             }
             root.isRunning = false
@@ -49,7 +49,7 @@ PlasmoidItem {
         }
 
         function checkMode() {
-            connectSource("cat $XDG_RUNTIME_DIR/plasma-daynight-mode 2>/dev/null")
+            connectSource("cat $XDG_RUNTIME_DIR/twilight-runtime 2>/dev/null")
         }
     }
 
@@ -78,9 +78,9 @@ PlasmoidItem {
         if (isRunning) return
         isRunning = true
         if (isDarkMode) {
-            toggleRunner.connectSource("plasma-daynight-sync day")
+            toggleRunner.connectSource("twilight light")
         } else {
-            toggleRunner.connectSource("plasma-daynight-sync night")
+            toggleRunner.connectSource("twilight dark")
         }
     }
 

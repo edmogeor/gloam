@@ -4,15 +4,15 @@
         "Authors": [
             {
                 "Email": "github.com/edmogeor",
-                "Name": "plasma-daynight-sync"
+                "Name": "twilight"
             }
         ],
         "Category": "Utilities",
-        "Description": "Toggle between day and night themes",
+        "Description": "Toggle between light and dark themes",
         "Icon": "weather-clear",
-        "Id": "org.kde.plasma.daynighttoggle",
+        "Id": "org.kde.plasma.lightdarktoggle",
         "License": "GPL-3.0",
-        "Name": "Day/Night Toggle",
+        "Name": "Light/Dark Mode Toggle",
         "Version": "1.0.0"
     },
     "X-Plasma-API-Minimum-Version": "6.0"
