@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # twilight.sh
-# Twilight: a theme switcher for KDE light/dark mode.
+# twilight: a dark/light mode theme switcher for KDE Plasma's day/night cycle.
 #   configure [options]  Scan themes, save config, generate watcher script, enable systemd service
 #                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -w|--widget -K|--shortcut
 #                        With no options, configures all. With options, only reconfigures specified types.
@@ -2388,7 +2388,7 @@ EOF
 
 show_help() {
     cat <<EOF
-twilight - A theme switcher for KDE light/dark mode
+twilight - A dark/light mode theme switcher for KDE Plasma's day/night cycle
 
 Usage: $0 <command> [options]
 
