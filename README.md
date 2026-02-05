@@ -1,7 +1,6 @@
-**twilight**
-**A dark/light mode theme switcher for KDE Plasma's day/night cycle.**
-
 <div align="center">
+  <h1>twilight</h1>
+  <p><b>A dark/light mode theme switcher for KDE Plasma's day/night cycle.</b></p>
   <img src="screenshots/example.gif" width="800" />
 </div>
 
