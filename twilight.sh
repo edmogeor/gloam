@@ -826,12 +826,13 @@ generate_custom_theme() {
     fi
 
     # Update metadata.json with new ID and name, preserving original authors
-    local original_authors='[{ "Name": "Unknown" }]'
-    if [[ -f "${base_theme_dir}/metadata.json" ]]; then
-        local extracted
-        extracted=$(grep -o '"Authors"[[:space:]]*:[[:space:]]*\[.*\]' "${base_theme_dir}/metadata.json" 2>/dev/null | sed 's/"Authors"[[:space:]]*:[[:space:]]*//')
-        [[ -n "$extracted" ]] && original_authors="$extracted"
-    fi
+    local original_authors
+    original_authors=$(python3 -c "
+import json, sys
+with open(sys.argv[1]) as f:
+    d = json.load(f)
+print(json.dumps(d.get('KPlugin', {}).get('Authors', [{'Name': 'Unknown'}])))
+" "${base_theme_dir}/metadata.json" 2>/dev/null) || original_authors='[{ "Name": "Unknown" }]'
 
     local metadata
     metadata=$(cat <<METADATA
