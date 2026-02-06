@@ -92,6 +92,7 @@ PlasmoidItem {
         }
     }
 
+    preferredRepresentation: fullRepresentation
     fullRepresentation: MouseArea {
         id: mouseArea
 
