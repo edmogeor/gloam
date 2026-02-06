@@ -39,6 +39,9 @@ PlasmoidItem {
             text: "Toggle Mode"
             icon.name: "system-switch-user"
             onTriggered: root.toggleMode()
+        },
+        PlasmaCore.Action {
+            isSeparator: true
         }
     ]
 
