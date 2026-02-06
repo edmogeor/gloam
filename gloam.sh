@@ -349,9 +349,17 @@ scan_icon_themes() {
         [[ -d "$dir" ]] || continue
         for theme_dir in "$dir"/*/; do
             [[ -f "${theme_dir}index.theme" ]] || continue
-            # Exclude cursor-only themes
-            [[ -d "${theme_dir}cursors" && ! -d "${theme_dir}actions" && ! -d "${theme_dir}apps" ]] && continue
-            themes+=("$(basename "$theme_dir")")
+            local name
+            name="$(basename "$theme_dir")"
+            # Skip the "default" stub
+            [[ "$name" == "default" ]] && continue
+            # Skip themes marked as hidden
+            grep -qi '^Hidden=true' "${theme_dir}index.theme" 2>/dev/null && continue
+            # Must have actions or apps dirs (excludes cursor-only themes)
+            local has_icons
+            has_icons=$(find -L "$theme_dir" -maxdepth 2 -type d \( -name actions -o -name apps \) -print -quit 2>/dev/null)
+            [[ -z "$has_icons" ]] && continue
+            themes+=("$name")
         done
     done
     # Deduplicate and sort
