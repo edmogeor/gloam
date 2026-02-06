@@ -27,17 +27,17 @@ PlasmoidItem {
     Plasmoid.contextualActions: [
         Kirigami.Action {
             text: "Light Mode"
-            iconName: "weather-clear"
+            icon.name: "weather-clear"
             onTriggered: root.setLightMode()
         },
         Kirigami.Action {
             text: "Dark Mode"
-            iconName: "weather-clear-night"
+            icon.name: "weather-clear-night"
             onTriggered: root.setDarkMode()
         },
         Kirigami.Action {
             text: "Toggle Mode"
-            iconName: "system-switch-user"
+            icon.name: "system-switch-user"
             onTriggered: root.toggleMode()
         }
     ]
