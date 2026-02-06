@@ -6,7 +6,7 @@
 
 **gloam** hooks into KDE's built-in day/night mode to automatically synchronize theme components that otherwise wouldn't get switched, or that you want to override with different options than the global theme provides.
 
-It generates custom Plasma Global Themes from your selections so KDE applies most overrides natively, and runs a lightweight background service to handle the rest (Kvantum, GTK, Konsole, Flatpak, browser color scheme, custom scripts).
+It generates custom Plasma Global Themes from your selections so KDE applies most overrides natively, and runs a lightweight background service to handle the rest (Kvantum, GTK, Konsole, Flatpak, and custom scripts).
 
 ## Features
 
@@ -18,7 +18,6 @@ It generates custom Plasma Global Themes from your selections so KDE applies mos
 - **Cursor Theme Sync:** Changes cursor themes for light/dark modes.
 - **Icon Theme Sync:** Changes icon packs for light/dark modes.
 - **GTK Theme Sync:** Updates GTK 3/4 themes to match your Plasma preference.
-- **Browser Color Scheme:** Syncs the XDG portal color scheme preference for browsers.
 - **Flatpak Support:** Automatically applies GTK, Kvantum, and icon themes to Flatpak apps.
 - **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
 - **Splash Screen:** Optionally overrides or disables the splash screen.
@@ -117,7 +116,7 @@ Once configured, the service runs in the background. You usually don't need to t
 1. During `configure`, gloam generates custom Plasma Global Themes that bundle your selected color scheme, icons, cursors, Plasma style, window decorations, and splash screen.
 2. These custom themes are set as your KDE day/night defaults, so Plasma applies most overrides natively when switching.
 3. A systemd service uses `inotifywait` to monitor `~/.config/kdeglobals` for changes.
-4. When a theme switch is detected, the service applies the remaining overrides that can't be bundled: Kvantum, GTK, browser color scheme, Konsole profiles, Flatpak themes, and custom scripts.
+4. When a theme switch is detected, the service applies the remaining overrides that can't be bundled: Kvantum, GTK, Konsole profiles, Flatpak themes, and custom scripts.
 
 ## Uninstallation
 
