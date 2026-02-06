@@ -24,27 +24,29 @@ PlasmoidItem {
     toolTipMainText: isDarkMode ? "Dark Mode" : "Light Mode"
     toolTipSubText: "Click to toggle"
 
+    Plasmoid.contextualActions: [
+        PlasmaCore.Action {
+            text: "Light Mode"
+            icon.name: "weather-clear"
+            onTriggered: root.setLightMode()
+        },
+        PlasmaCore.Action {
+            text: "Dark Mode"
+            icon.name: "weather-clear-night"
+            onTriggered: root.setDarkMode()
+        },
+        PlasmaCore.Action {
+            text: "Toggle Mode"
+            icon.name: "system-switch-user"
+            onTriggered: root.toggleMode()
+        }
+    ]
+
     Plasmoid.onActivated: toggleMode()
 
     Component.onCompleted: {
         modeReader.checkMode()
         modeWatcher.running = true
-
-        // Set up contextual actions using Plasmoid API to ensure type compatibility
-        Plasmoid.setAction("lightAction", "Light Mode", "weather-clear")
-        Plasmoid.setAction("darkAction", "Dark Mode", "weather-clear-night")
-        Plasmoid.setAction("toggleAction", "Toggle Mode", "system-switch-user")
-
-        var light = Plasmoid.action("lightAction")
-        light.triggered.connect(root.setLightMode)
-
-        var dark = Plasmoid.action("darkAction")
-        dark.triggered.connect(root.setDarkMode)
-
-        var toggle = Plasmoid.action("toggleAction")
-        toggle.triggered.connect(root.toggleMode)
-
-        Plasmoid.contextualActions = [light, dark, toggle]
     }
 
     // Read mode from status file (written by gloam script)
