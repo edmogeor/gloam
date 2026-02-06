@@ -3,7 +3,7 @@
 # gloam.sh
 # gloam: Syncs Kvantum, GTK, and custom scripts with Plasma 6's native light/dark (day/night) theme switching - and more.
 #   configure [options]  Scan themes, save config, generate watcher script, enable systemd service
-#                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -w|--widget -K|--shortcut
+#                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -w|--widget -K|--shortcut
 #                        With no options, configures all. With options, only reconfigures specified types.
 #   uninstall            Stop service, remove all installed files
 #   status               Show service status and current configuration
@@ -433,6 +433,10 @@ scan_sddm_themes() {
     done | sort -t'|' -k2
 }
 
+scan_app_styles() {
+    python3 -c "from PyQt6.QtWidgets import QStyleFactory; print('\n'.join(sorted(set(QStyleFactory.keys()))))"
+}
+
 scan_color_schemes() {
     local schemes=()
     for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes"; do
@@ -771,6 +775,13 @@ refresh_kvantum_style() {
     kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle "$style"
 }
 
+apply_app_style() {
+    local style="$1"
+    if [[ -n "$style" ]]; then
+        kwriteconfig6 --file kdeglobals --group KDE --key widgetStyle "$style"
+    fi
+}
+
 # Check if user configured any options that can be bundled into a custom theme
 has_bundleable_options() {
     [[ -n "${COLOR_LIGHT:-}" || -n "${COLOR_DARK:-}" || \
@@ -779,7 +790,8 @@ has_bundleable_options() {
        -n "${STYLE_LIGHT:-}" || -n "${STYLE_DARK:-}" || \
        -n "${DECORATION_LIGHT:-}" || -n "${DECORATION_DARK:-}" || \
        -n "${SPLASH_LIGHT:-}" || -n "${SPLASH_DARK:-}" || \
-       -n "${SDDM_LIGHT:-}" || -n "${SDDM_DARK:-}" ]]
+       -n "${SDDM_LIGHT:-}" || -n "${SDDM_DARK:-}" || \
+       -n "${APPSTYLE_LIGHT:-}" || -n "${APPSTYLE_DARK:-}" ]]
 }
 
 # Prompt user for global vs local theme install, authenticate sudo if needed
@@ -857,7 +869,7 @@ generate_custom_theme() {
     fi
 
     # Select user overrides based on mode
-    local color_scheme icon_theme cursor_theme plasma_style decoration splash_theme sddm_theme
+    local color_scheme icon_theme cursor_theme plasma_style decoration splash_theme sddm_theme app_style
     if [[ "$mode" == "light" ]]; then
         color_scheme="${COLOR_LIGHT:-}"
         icon_theme="${ICON_LIGHT:-}"
@@ -866,6 +878,7 @@ generate_custom_theme() {
         decoration="${DECORATION_LIGHT:-}"
         splash_theme="${SPLASH_LIGHT:-}"
         sddm_theme="${SDDM_LIGHT:-}"
+        app_style="${APPSTYLE_LIGHT:-}"
     else
         color_scheme="${COLOR_DARK:-}"
         icon_theme="${ICON_DARK:-}"
@@ -874,6 +887,7 @@ generate_custom_theme() {
         decoration="${DECORATION_DARK:-}"
         splash_theme="${SPLASH_DARK:-}"
         sddm_theme="${SDDM_DARK:-}"
+        app_style="${APPSTYLE_DARK:-}"
     fi
 
     # Update metadata.json with new ID and name, preserving original authors
@@ -984,6 +998,9 @@ METADATA
     # SDDM theme
     [[ -n "$sddm_theme" ]] && update_defaults_key "[sddm][Theme]" "Current" "$sddm_theme"
 
+    # Application style (Qt widget style)
+    [[ -n "$app_style" ]] && update_defaults_key "[kdeglobals][KDE]" "widgetStyle" "$app_style"
+
     # Add panel layout
     local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
     if [[ -f "$panel_config" ]]; then
@@ -1042,6 +1059,9 @@ apply_theme() {
             [[ -n "$DECORATION_DARK" ]] && apply_window_decoration "$DECORATION_DARK"
             [[ -n "$CURSOR_DARK" ]] && apply_cursor_theme "$CURSOR_DARK"
             apply_splash "$SPLASH_DARK"
+            if [[ -n "$APPSTYLE_DARK" && -z "$KVANTUM_DARK" ]]; then
+                apply_app_style "$APPSTYLE_DARK"
+            fi
         else
             # Still ensure splash "None" stays disabled (theme sets it, but LookAndFeel may override)
             [[ "$SPLASH_DARK" == "None" ]] && apply_splash "None"
@@ -1095,6 +1115,9 @@ apply_theme() {
             [[ -n "$DECORATION_LIGHT" ]] && apply_window_decoration "$DECORATION_LIGHT"
             [[ -n "$CURSOR_LIGHT" ]] && apply_cursor_theme "$CURSOR_LIGHT"
             apply_splash "$SPLASH_LIGHT"
+            if [[ -n "$APPSTYLE_LIGHT" && -z "$KVANTUM_LIGHT" ]]; then
+                apply_app_style "$APPSTYLE_LIGHT"
+            fi
         else
             # Still ensure splash "None" stays disabled (theme sets it, but LookAndFeel may override)
             [[ "$SPLASH_LIGHT" == "None" ]] && apply_splash "None"
@@ -1260,6 +1283,7 @@ do_configure() {
     local configure_login=false
     local configure_widget=false
     local configure_shortcut=false
+    local configure_appstyle=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1270,6 +1294,7 @@ do_configure() {
             -s|--script)        configure_script=true; configure_all=false ;;
             -S|--splash)        configure_splash=true; configure_all=false ;;
             -l|--login)         configure_login=true; configure_all=false ;;
+            -a|--appstyle)      configure_appstyle=true; configure_all=false ;;
             -c|--colors)        configure_colors=true; configure_all=false ;;
             -p|--style)         configure_style=true; configure_all=false ;;
             -d|--decorations)   configure_decorations=true; configure_all=false ;;
@@ -1279,7 +1304,7 @@ do_configure() {
             help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -w|--widget -K|--shortcut" >&2
+                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -w|--widget -K|--shortcut" >&2
                 exit 1
                 ;;
         esac
@@ -1824,6 +1849,49 @@ do_configure() {
     fi
     fi
 
+    # Select Application Style (Qt widget style)
+    if [[ "$configure_all" == true || "$configure_appstyle" == true ]]; then
+    echo ""
+    read -rp "Configure application style? (Qt widget style - Breeze, Fusion, etc.) [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for application styles..."
+        local app_style_names=()
+        while IFS= read -r name; do
+            app_style_names+=("$name")
+        done < <(scan_app_styles)
+
+        if [[ ${#app_style_names[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No application styles found.${RESET}"
+            APPSTYLE_LIGHT=""
+            APPSTYLE_DARK=""
+        else
+            echo ""
+            echo -e "${BOLD}Available application styles:${RESET}"
+            for i in "${!app_style_names[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${app_style_names[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ LIGHT mode application style [1-${#app_style_names[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
+                APPSTYLE_LIGHT="${app_style_names[$((choice - 1))]}"
+            else
+                APPSTYLE_LIGHT=""
+            fi
+
+            read -rp "Select 🌙 DARK mode application style [1-${#app_style_names[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
+                APPSTYLE_DARK="${app_style_names[$((choice - 1))]}"
+            else
+                APPSTYLE_DARK=""
+            fi
+        fi
+    else
+        APPSTYLE_LIGHT=""
+        APPSTYLE_DARK=""
+    fi
+    fi
+
     # Configure custom scripts
     if [[ "$configure_all" == true || "$configure_script" == true ]]; then
     echo ""
@@ -1864,7 +1932,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "${KVANTUM_LIGHT:-}" && -z "${KVANTUM_DARK:-}" && -z "${STYLE_LIGHT:-}" && -z "${STYLE_DARK:-}" && -z "${DECORATION_LIGHT:-}" && -z "${DECORATION_DARK:-}" && -z "${COLOR_LIGHT:-}" && -z "${COLOR_DARK:-}" && -z "${ICON_LIGHT:-}" && -z "${ICON_DARK:-}" && -z "${CURSOR_LIGHT:-}" && -z "${CURSOR_DARK:-}" && -z "${GTK_LIGHT:-}" && -z "${GTK_DARK:-}" && -z "${KONSOLE_LIGHT:-}" && -z "${KONSOLE_DARK:-}" && -z "${SPLASH_LIGHT:-}" && -z "${SPLASH_DARK:-}" && -z "${SDDM_LIGHT:-}" && -z "${SDDM_DARK:-}" && -z "${SCRIPT_LIGHT:-}" && -z "${SCRIPT_DARK:-}" ]]; then
+    if [[ -z "${KVANTUM_LIGHT:-}" && -z "${KVANTUM_DARK:-}" && -z "${STYLE_LIGHT:-}" && -z "${STYLE_DARK:-}" && -z "${DECORATION_LIGHT:-}" && -z "${DECORATION_DARK:-}" && -z "${COLOR_LIGHT:-}" && -z "${COLOR_DARK:-}" && -z "${ICON_LIGHT:-}" && -z "${ICON_DARK:-}" && -z "${CURSOR_LIGHT:-}" && -z "${CURSOR_DARK:-}" && -z "${GTK_LIGHT:-}" && -z "${GTK_DARK:-}" && -z "${KONSOLE_LIGHT:-}" && -z "${KONSOLE_DARK:-}" && -z "${SPLASH_LIGHT:-}" && -z "${SPLASH_DARK:-}" && -z "${SDDM_LIGHT:-}" && -z "${SDDM_DARK:-}" && -z "${APPSTYLE_LIGHT:-}" && -z "${APPSTYLE_DARK:-}" && -z "${SCRIPT_LIGHT:-}" && -z "${SCRIPT_DARK:-}" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -1883,6 +1951,7 @@ do_configure() {
     echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
     echo "    Splash: $(get_friendly_name splash "${SPLASH_LIGHT:-}")"
     echo "    Login: $(get_friendly_name sddm "${SDDM_LIGHT:-}")"
+    echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
     echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
     echo -e "🌙 Dark theme:  ${BOLD}$(get_friendly_name laf "$laf_dark")${RESET}"
     echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
@@ -1895,6 +1964,7 @@ do_configure() {
     echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
     echo "    Splash: $(get_friendly_name splash "${SPLASH_DARK:-}")"
     echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
+    echo "    App style: ${APPSTYLE_DARK:-unchanged}"
     echo "    Script: ${SCRIPT_DARK:-unchanged}"
 
     # Preserve values from config if doing partial reconfigure
@@ -2045,6 +2115,8 @@ SPLASH_LIGHT=${SPLASH_LIGHT:-}
 SPLASH_DARK=${SPLASH_DARK:-}
 SDDM_LIGHT=${SDDM_LIGHT:-}
 SDDM_DARK=${SDDM_DARK:-}
+APPSTYLE_LIGHT=${APPSTYLE_LIGHT:-}
+APPSTYLE_DARK=${APPSTYLE_DARK:-}
 SCRIPT_LIGHT=${SCRIPT_LIGHT:-}
 SCRIPT_DARK=${SCRIPT_DARK:-}
 CUSTOM_THEME_LIGHT=${CUSTOM_THEME_LIGHT:-}
@@ -2486,6 +2558,7 @@ do_status() {
         echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
         echo "    Splash: $(get_friendly_name splash "${SPLASH_LIGHT:-}")"
         echo "    Login: $(get_friendly_name sddm "${SDDM_LIGHT:-}")"
+        echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
         echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
         echo -e "🌙 Dark theme:  ${BOLD}$(get_friendly_name laf "$LAF_DARK")${RESET} ($LAF_DARK)"
         echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
@@ -2498,6 +2571,7 @@ do_status() {
         echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
         echo "    Splash: $(get_friendly_name splash "${SPLASH_DARK:-}")"
         echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
+        echo "    App style: ${APPSTYLE_DARK:-unchanged}"
         echo "    Script: ${SCRIPT_DARK:-unchanged}"
     else
         echo "Configuration: not installed"
@@ -2520,6 +2594,7 @@ Options:
   -o, --konsole       Configure Konsole profiles only
   -S, --splash        Configure splash screens only
   -l, --login         Configure login screen (SDDM) themes
+  -a, --appstyle      Configure application style (Qt widget style)
   -c, --colors        Configure color schemes only
   -p, --style         Configure Plasma styles only
   -d, --decorations   Configure window decorations only
