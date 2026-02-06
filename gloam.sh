@@ -1213,6 +1213,18 @@ METADATA
     # Application style (Qt widget style)
     [[ -n "$app_style" ]] && update_defaults_key "[kdeglobals][KDE]" "widgetStyle" "$app_style"
 
+    # Wallpaper (point both light and dark themes to the dynamic pack)
+    if [[ "${WALLPAPER:-}" == true ]]; then
+        local wp_dir
+        if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+            wp_dir="/usr/share/wallpapers/gloam-dynamic"
+        else
+            wp_dir="${HOME}/.local/share/wallpapers/gloam-dynamic"
+        fi
+        update_defaults_key "[Wallpaper][org.kde.image][General]" "Image" "file://${wp_dir}"
+        update_defaults_key "[Wallpaper][org.kde.image][General]" "SlidePaths" ""
+    fi
+
     # Add panel layout
     local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
     if [[ -f "$panel_config" ]]; then
