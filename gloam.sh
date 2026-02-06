@@ -3,7 +3,7 @@
 # gloam.sh
 # gloam: Syncs Kvantum, GTK, and custom scripts with Plasma 6's native light/dark (day/night) theme switching - and more.
 #   configure [options]  Scan themes, save config, generate watcher script, enable systemd service
-#                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -w|--widget -K|--shortcut
+#                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -W|--wallpaper -w|--widget -K|--shortcut
 #                        With no options, configures all. With options, only reconfigures specified types.
 #   uninstall            Stop service, remove all installed files
 #   status               Show service status and current configuration
@@ -437,6 +437,88 @@ scan_app_styles() {
     python3 -c "from PyQt6.QtWidgets import QStyleFactory; print('\n'.join(sorted(set(QStyleFactory.keys()))))"
 }
 
+get_image_dimensions() {
+    local path="$1"
+    python3 -c "
+from PyQt6.QtGui import QImage
+img = QImage('${path//\'/\\\'}')
+if not img.isNull():
+    print(f'{img.width()}x{img.height()}')
+"
+}
+
+resolve_image_paths() {
+    local input="$1"
+    local images=()
+    for path in $input; do
+        # Expand tilde
+        path="${path/#\~/$HOME}"
+        if [[ -d "$path" ]]; then
+            for ext in png jpg jpeg webp bmp; do
+                for img in "$path"/*."$ext"; do
+                    [[ -f "$img" ]] && images+=("$img")
+                done
+            done
+        elif [[ -f "$path" ]]; then
+            images+=("$path")
+        fi
+    done
+    printf '%s\n' "${images[@]}"
+}
+
+generate_wallpaper_pack() {
+    local pack_name="$1"
+    local display_name="$2"
+    local -n _light_imgs=$3
+    local -n _dark_imgs=$4
+    local wallpaper_dir="${HOME}/.local/share/wallpapers/${pack_name}"
+
+    # Clean and create directory structure
+    rm -rf "$wallpaper_dir"
+    mkdir -p "${wallpaper_dir}/contents/images"
+
+    # Copy light images
+    for img in "${_light_imgs[@]}"; do
+        [[ -f "$img" ]] || continue
+        local dims ext
+        dims=$(get_image_dimensions "$img")
+        [[ -z "$dims" ]] && continue
+        ext="${img##*.}"
+        cp "$img" "${wallpaper_dir}/contents/images/${dims}.${ext,,}"
+    done
+
+    # Copy dark images (if any)
+    if [[ ${#_dark_imgs[@]} -gt 0 ]]; then
+        mkdir -p "${wallpaper_dir}/contents/images_dark"
+        for img in "${_dark_imgs[@]}"; do
+            [[ -f "$img" ]] || continue
+            local dims ext
+            dims=$(get_image_dimensions "$img")
+            [[ -z "$dims" ]] && continue
+            ext="${img##*.}"
+            cp "$img" "${wallpaper_dir}/contents/images_dark/${dims}.${ext,,}"
+        done
+    fi
+
+    # Generate metadata.json
+    cat > "${wallpaper_dir}/metadata.json" <<METADATA
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "gloam"
+            }
+        ],
+        "Id": "${pack_name}",
+        "License": "CC-BY-SA-4.0",
+        "Name": "${display_name}"
+    }
+}
+METADATA
+
+    echo -e "  ${GREEN}Created:${RESET} ${display_name} — ${wallpaper_dir}/"
+}
+
 scan_color_schemes() {
     local schemes=()
     for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes"; do
@@ -733,6 +815,27 @@ apply_sddm_theme() {
     fi
 }
 
+apply_desktop_wallpaper() {
+    local wallpaper_dir="$1"
+    plasma-apply-wallpaperimage "$wallpaper_dir" >/dev/null 2>&1 || true
+}
+
+apply_lockscreen_wallpaper() {
+    local wallpaper_dir="$1"
+    kwriteconfig6 --file kscreenlockerrc \
+        --group Greeter --group Wallpaper --group org.kde.image --group General \
+        --key Image "file://${wallpaper_dir}"
+}
+
+apply_sddm_wallpaper() {
+    local image="$1"
+    if [[ -n "$image" && -f "$image" ]]; then
+        if [[ -x /usr/local/lib/gloam/set-sddm-background ]]; then
+            sudo /usr/local/lib/gloam/set-sddm-background "$image" 2>/dev/null || true
+        fi
+    fi
+}
+
 setup_sddm_sudoers() {
     # Create wrapper script
     sudo mkdir -p /usr/local/lib/gloam
@@ -747,6 +850,69 @@ SCRIPT
     echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/set-sddm-theme" | \
         sudo tee /etc/sudoers.d/gloam-sddm > /dev/null
     sudo chmod 440 /etc/sudoers.d/gloam-sddm
+}
+
+setup_sddm_wallpaper() {
+    local -n _sddm_light=$1
+    local -n _sddm_dark=$2
+
+    sudo mkdir -p /usr/local/lib/gloam
+
+    # Find the largest resolution image for each mode
+    local best_light="" best_dark="" best_pixels=0
+    for img in "${_sddm_light[@]}"; do
+        [[ -f "$img" ]] || continue
+        local dims
+        dims=$(get_image_dimensions "$img")
+        [[ -z "$dims" ]] && continue
+        local w h
+        w="${dims%x*}"; h="${dims#*x}"
+        if (( w * h > best_pixels )); then
+            best_pixels=$(( w * h ))
+            best_light="$img"
+        fi
+    done
+
+    best_pixels=0
+    for img in "${_sddm_dark[@]}"; do
+        [[ -f "$img" ]] || continue
+        local dims
+        dims=$(get_image_dimensions "$img")
+        [[ -z "$dims" ]] && continue
+        local w h
+        w="${dims%x*}"; h="${dims#*x}"
+        if (( w * h > best_pixels )); then
+            best_pixels=$(( w * h ))
+            best_dark="$img"
+        fi
+    done
+
+    # Copy images to system-accessible location
+    if [[ -n "$best_light" ]]; then
+        local ext="${best_light##*.}"
+        sudo cp "$best_light" "/usr/local/lib/gloam/sddm-bg-light.${ext,,}"
+    fi
+    if [[ -n "$best_dark" ]]; then
+        local ext="${best_dark##*.}"
+        sudo cp "$best_dark" "/usr/local/lib/gloam/sddm-bg-dark.${ext,,}"
+    fi
+
+    # Create wrapper script
+    sudo tee /usr/local/lib/gloam/set-sddm-background > /dev/null <<'SCRIPT'
+#!/bin/bash
+[[ -z "$1" || ! -f "$1" ]] && exit 1
+THEME=$(kreadconfig6 --file /etc/sddm.conf.d/kde_settings.conf --group Theme --key Current 2>/dev/null)
+[[ -z "$THEME" ]] && THEME="breeze"
+THEME_DIR="/usr/share/sddm/themes/$THEME"
+[[ -d "$THEME_DIR" ]] || exit 1
+kwriteconfig6 --file "$THEME_DIR/theme.conf.user" --group General --key background "$1"
+SCRIPT
+    sudo chmod 755 /usr/local/lib/gloam/set-sddm-background
+
+    # Create sudoers rule
+    echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/set-sddm-background" | \
+        sudo tee /etc/sudoers.d/gloam-sddm-bg > /dev/null
+    sudo chmod 440 /etc/sudoers.d/gloam-sddm-bg
 }
 
 apply_color_scheme() {
@@ -1027,6 +1193,13 @@ remove_custom_themes() {
     done
 }
 
+remove_wallpaper_packs() {
+    for pack in gloam-dynamic gloam-light gloam-dark; do
+        local path="${HOME}/.local/share/wallpapers/${pack}"
+        [[ -d "$path" ]] && rm -rf "$path" && echo "Removed $path"
+    done
+}
+
 apply_theme() {
     local laf="$1"
     # Wait for LookAndFeel to finish applying before overriding settings
@@ -1072,6 +1245,13 @@ apply_theme() {
 
         # Login screen (SDDM) - always apply (system-level, not applied by plasma-apply-lookandfeel)
         [[ -n "$SDDM_DARK" ]] && apply_sddm_theme "$SDDM_DARK"
+
+        # SDDM wallpaper - always apply (not bundleable)
+        if [[ "${WALLPAPER:-}" == true ]]; then
+            local sddm_bg_dark
+            sddm_bg_dark=$(compgen -G "/usr/local/lib/gloam/sddm-bg-dark.*" | head -1)
+            [[ -n "$sddm_bg_dark" ]] && apply_sddm_wallpaper "$sddm_bg_dark"
+        fi
 
         # Browser color scheme - always apply (not bundleable)
         apply_browser_color_scheme "dark"
@@ -1128,6 +1308,13 @@ apply_theme() {
 
         # Login screen (SDDM) - always apply (system-level, not applied by plasma-apply-lookandfeel)
         [[ -n "$SDDM_LIGHT" ]] && apply_sddm_theme "$SDDM_LIGHT"
+
+        # SDDM wallpaper - always apply (not bundleable)
+        if [[ "${WALLPAPER:-}" == true ]]; then
+            local sddm_bg_light
+            sddm_bg_light=$(compgen -G "/usr/local/lib/gloam/sddm-bg-light.*" | head -1)
+            [[ -n "$sddm_bg_light" ]] && apply_sddm_wallpaper "$sddm_bg_light"
+        fi
 
         # Browser color scheme - always apply (not bundleable)
         apply_browser_color_scheme "light"
@@ -1284,6 +1471,7 @@ do_configure() {
     local configure_widget=false
     local configure_shortcut=false
     local configure_appstyle=false
+    local configure_wallpaper=false
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1295,6 +1483,7 @@ do_configure() {
             -S|--splash)        configure_splash=true; configure_all=false ;;
             -l|--login)         configure_login=true; configure_all=false ;;
             -a|--appstyle)      configure_appstyle=true; configure_all=false ;;
+            -W|--wallpaper)     configure_wallpaper=true; configure_all=false ;;
             -c|--colors)        configure_colors=true; configure_all=false ;;
             -p|--style)         configure_style=true; configure_all=false ;;
             -d|--decorations)   configure_decorations=true; configure_all=false ;;
@@ -1304,7 +1493,7 @@ do_configure() {
             help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -w|--widget -K|--shortcut" >&2
+                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -W|--wallpaper -w|--widget -K|--shortcut" >&2
                 exit 1
                 ;;
         esac
@@ -1892,6 +2081,70 @@ do_configure() {
     fi
     fi
 
+    # Configure day/night wallpapers
+    if [[ "$configure_all" == true || "$configure_wallpaper" == true ]]; then
+    echo ""
+    read -rp "Configure day/night wallpapers? [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo ""
+        read -rp "Enter ☀️ LIGHT wallpaper path(s) (space-separated files, or a folder): " wp_light_input
+        local wp_light_paths=()
+        while IFS= read -r img; do
+            wp_light_paths+=("$img")
+        done < <(resolve_image_paths "$wp_light_input")
+
+        if [[ ${#wp_light_paths[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No valid images found for light mode.${RESET}"
+        fi
+
+        read -rp "Enter 🌙 DARK wallpaper path(s) (space-separated files, or a folder): " wp_dark_input
+        local wp_dark_paths=()
+        while IFS= read -r img; do
+            wp_dark_paths+=("$img")
+        done < <(resolve_image_paths "$wp_dark_input")
+
+        if [[ ${#wp_dark_paths[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No valid images found for dark mode.${RESET}"
+        fi
+
+        if [[ ${#wp_light_paths[@]} -gt 0 && ${#wp_dark_paths[@]} -gt 0 ]]; then
+            echo ""
+            echo "Creating wallpaper packs..."
+            local wp_empty=()
+            generate_wallpaper_pack "gloam-dynamic" "Custom (Dynamic)" wp_light_paths wp_dark_paths
+            generate_wallpaper_pack "gloam-light" "Custom (Light)" wp_light_paths wp_empty
+            generate_wallpaper_pack "gloam-dark" "Custom (Dark)" wp_dark_paths wp_empty
+
+            echo ""
+            local wallpaper_dir="${HOME}/.local/share/wallpapers/gloam-dynamic"
+            echo -n "Applying to desktop... "
+            apply_desktop_wallpaper "$wallpaper_dir"
+            echo -e "${GREEN}done${RESET}"
+
+            echo -n "Applying to lock screen... "
+            apply_lockscreen_wallpaper "$wallpaper_dir"
+            echo -e "${GREEN}done${RESET}"
+
+            echo ""
+            read -rp "Set SDDM login background? (requires sudo) [y/N]: " sddm_wp_choice
+            if [[ "$sddm_wp_choice" =~ ^[Yy]$ ]]; then
+                sudo -v || { echo -e "${RED}Sudo required for SDDM wallpaper.${RESET}"; sddm_wp_choice="n"; }
+                if [[ "$sddm_wp_choice" =~ ^[Yy]$ ]]; then
+                    setup_sddm_wallpaper wp_light_paths wp_dark_paths
+                    echo -e "  ${GREEN}SDDM backgrounds installed.${RESET}"
+                fi
+            fi
+
+            WALLPAPER=true
+        else
+            echo -e "${YELLOW}Need at least one image for each mode. Skipping wallpaper.${RESET}"
+            WALLPAPER=""
+        fi
+    else
+        WALLPAPER=""
+    fi
+    fi
+
     # Configure custom scripts
     if [[ "$configure_all" == true || "$configure_script" == true ]]; then
     echo ""
@@ -1932,7 +2185,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "${KVANTUM_LIGHT:-}" && -z "${KVANTUM_DARK:-}" && -z "${STYLE_LIGHT:-}" && -z "${STYLE_DARK:-}" && -z "${DECORATION_LIGHT:-}" && -z "${DECORATION_DARK:-}" && -z "${COLOR_LIGHT:-}" && -z "${COLOR_DARK:-}" && -z "${ICON_LIGHT:-}" && -z "${ICON_DARK:-}" && -z "${CURSOR_LIGHT:-}" && -z "${CURSOR_DARK:-}" && -z "${GTK_LIGHT:-}" && -z "${GTK_DARK:-}" && -z "${KONSOLE_LIGHT:-}" && -z "${KONSOLE_DARK:-}" && -z "${SPLASH_LIGHT:-}" && -z "${SPLASH_DARK:-}" && -z "${SDDM_LIGHT:-}" && -z "${SDDM_DARK:-}" && -z "${APPSTYLE_LIGHT:-}" && -z "${APPSTYLE_DARK:-}" && -z "${SCRIPT_LIGHT:-}" && -z "${SCRIPT_DARK:-}" ]]; then
+    if [[ -z "${KVANTUM_LIGHT:-}" && -z "${KVANTUM_DARK:-}" && -z "${STYLE_LIGHT:-}" && -z "${STYLE_DARK:-}" && -z "${DECORATION_LIGHT:-}" && -z "${DECORATION_DARK:-}" && -z "${COLOR_LIGHT:-}" && -z "${COLOR_DARK:-}" && -z "${ICON_LIGHT:-}" && -z "${ICON_DARK:-}" && -z "${CURSOR_LIGHT:-}" && -z "${CURSOR_DARK:-}" && -z "${GTK_LIGHT:-}" && -z "${GTK_DARK:-}" && -z "${KONSOLE_LIGHT:-}" && -z "${KONSOLE_DARK:-}" && -z "${SPLASH_LIGHT:-}" && -z "${SPLASH_DARK:-}" && -z "${SDDM_LIGHT:-}" && -z "${SDDM_DARK:-}" && -z "${APPSTYLE_LIGHT:-}" && -z "${APPSTYLE_DARK:-}" && -z "${WALLPAPER:-}" && -z "${SCRIPT_LIGHT:-}" && -z "${SCRIPT_DARK:-}" ]]; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -1966,6 +2219,7 @@ do_configure() {
     echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
     echo "    App style: ${APPSTYLE_DARK:-unchanged}"
     echo "    Script: ${SCRIPT_DARK:-unchanged}"
+    echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
 
     # Preserve values from config if doing partial reconfigure
     local CUSTOM_THEME_LIGHT="${CUSTOM_THEME_LIGHT:-}"
@@ -2117,6 +2371,7 @@ SDDM_LIGHT=${SDDM_LIGHT:-}
 SDDM_DARK=${SDDM_DARK:-}
 APPSTYLE_LIGHT=${APPSTYLE_LIGHT:-}
 APPSTYLE_DARK=${APPSTYLE_DARK:-}
+WALLPAPER=${WALLPAPER:-}
 SCRIPT_LIGHT=${SCRIPT_LIGHT:-}
 SCRIPT_DARK=${SCRIPT_DARK:-}
 CUSTOM_THEME_LIGHT=${CUSTOM_THEME_LIGHT:-}
@@ -2293,7 +2548,7 @@ do_remove() {
     local xdg_shortcuts="/etc/xdg/kglobalshortcutsrc"
 
     local needs_sudo=false
-    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -d /usr/local/lib/gloam ]] && needs_sudo=true
+    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -f /etc/sudoers.d/gloam-sddm-bg || -d /usr/local/lib/gloam ]] && needs_sudo=true
 
     if [[ "$needs_sudo" == true ]]; then
         # Warn about global installation
@@ -2368,12 +2623,14 @@ do_remove() {
 
     # Remove SDDM sudoers rule and wrapper script
     [[ -f /etc/sudoers.d/gloam-sddm ]] && sudo rm /etc/sudoers.d/gloam-sddm && echo "Removed /etc/sudoers.d/gloam-sddm"
+    [[ -f /etc/sudoers.d/gloam-sddm-bg ]] && sudo rm /etc/sudoers.d/gloam-sddm-bg && echo "Removed /etc/sudoers.d/gloam-sddm-bg"
     [[ -d /usr/local/lib/gloam ]] && sudo rm -rf /usr/local/lib/gloam && echo "Removed /usr/local/lib/gloam"
 
     # Remove plasmoid, shortcut, and custom themes
     remove_plasmoid
     remove_shortcut
     remove_custom_themes
+    remove_wallpaper_packs
 
     # Remove system defaults for new users
     [[ -f "$skel_config" ]] && sudo rm "$skel_config" && echo "Removed $skel_config"
@@ -2573,6 +2830,7 @@ do_status() {
         echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
         echo "    App style: ${APPSTYLE_DARK:-unchanged}"
         echo "    Script: ${SCRIPT_DARK:-unchanged}"
+        echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
     else
         echo "Configuration: not installed"
     fi
@@ -2595,6 +2853,7 @@ Options:
   -S, --splash        Configure splash screens only
   -l, --login         Configure login screen (SDDM) themes
   -a, --appstyle      Configure application style (Qt widget style)
+  -W, --wallpaper     Configure day/night wallpapers
   -c, --colors        Configure color schemes only
   -p, --style         Configure Plasma styles only
   -d, --decorations   Configure window decorations only

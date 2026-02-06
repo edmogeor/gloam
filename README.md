@@ -4,6 +4,17 @@
   <img src="screenshots/example.gif" width="800" />
 </div>
 
+> **Warning:** This project is in active development. Features may change, break, or be incomplete.
+
+### Quick Start
+
+```bash
+git clone https://github.com/edmogeor/gloam.git
+cd gloam && ./gloam.sh configure
+```
+
+---
+
 **gloam** solves a common problem in KDE Plasma: **external themes don't switch automatically.**
 
 While Plasma handles its own styling well, components like **Kvantum**, **GTK apps**, **Flatpaks**, and **Konsole** often get left behind when switching between day and night modes.
@@ -27,6 +38,7 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 - **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
 - **Splash Screen:** Optionally overrides or disables the splash screen.
 - **Login Screen (SDDM):** Switches SDDM login screen themes for light/dark modes.
+- **Wallpaper Generation:** Creates dynamic wallpaper packs from your images and applies them to desktop, lock screen, and SDDM.
 - **Custom Scripts:** Run arbitrary scripts when switching to light or dark mode.
 - **Systemd Service:** User-level systemd service watches for changes automatically.
 - **Panel Widget:** Optional Light/Dark Mode Toggle widget for your panel.
@@ -98,6 +110,7 @@ gloam configure --gtk          # GTK themes
 gloam configure --konsole      # Konsole profiles
 gloam configure --splash       # Splash screen
 gloam configure --login        # Login screen (SDDM) themes
+gloam configure --wallpaper    # Day/night wallpapers
 gloam configure --script       # Custom scripts
 gloam configure --widget       # Panel widget
 gloam configure --shortcut     # Keyboard shortcut
@@ -132,54 +145,3 @@ To remove the service, configuration, and all installed files:
 gloam remove
 ```
 
-## Day/Night Wallpapers
-
-**Note:** gloam does not manage wallpapers, as KDE Plasma 6 handles day/night wallpaper switching natively through dynamic wallpapers.
-
-To set up automatic day/night wallpaper switching:
-
-1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure (Replace `WALLPAPER_NAME` with the name you want):
-
-```
-~/.local/share/wallpapers/WALLPAPER_NAME/
-├── metadata.json
-└── contents/
-    ├── images/          # Day wallpapers
-    │   ├── 1440x2960.png
-    │   ├── 5120x2880.png
-    │   └── 7680x2160.png
-    └── images_dark/     # Night wallpapers
-        ├── 1440x2960.png
-        ├── 5120x2880.png
-        └── 7680x2160.png
-```
-
-2. **Create the `metadata.json` file** (Make sure the Id field is one word with no spaces):
-
-```json
-{
-    "KPlugin": {
-        "Authors": [
-            {
-            }
-        ],
-        "Id": "WALLPAPER_NAME",
-        "License": "CC-BY-SA-4.0",
-        "Name": "WALLPAPER_NAME"
-    }
-}
-```
-
-3. **Add your wallpaper images:**
-   - Place day wallpapers in `contents/images/`
-   - Place night wallpapers in `contents/images_dark/`
-   - Name each file by its resolution (e.g., `1440x2960.png`)
-   - KDE will automatically select the appropriate resolution for each display
-
-4. **Select the wallpaper:**
-   - Open System Settings > Wallpaper
-   - Your new wallpaper should appear in the list
-   - Select it to enable automatic day/night switching
-   - Ensure **Switch dynamic wallpapers:** is set to **Based on whether Plasma style is light or dark**
-
-KDE will automatically switch between day and night wallpapers based on your day/night mode settings.
