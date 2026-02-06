@@ -10,7 +10,7 @@ While Plasma handles its own styling well, components like **Kvantum**, **GTK ap
 
 **gloam** bridges this gap. It hooks into KDE's native day/night transition to instantly synchronize *everything* on your desktop, ensuring a consistent look across all applications.
 
-It works by bundling your preferences into custom Plasma Global Themes (for native integration) and running a lightweight service to handle the external tools that Plasma misses.
+It can bundle your preferences into custom Plasma Global Themes (for native integration), or simply run alongside your existing setup to handle the external tools that Plasma misses.
 
 ## Features
 
@@ -117,7 +117,7 @@ Once configured, the service runs in the background. You usually don't need to t
 
 ## How It Works
 
-1.  **Native Integration:** During setup, `gloam` creates custom Plasma Global Themes containing your choices (icons, cursors, etc.). These are set as your KDE defaults, so Plasma handles the main switch natively.
+1.  **Native Integration (Optional):** If you choose, `gloam` can generate custom Plasma Global Themes containing your choices. These are set as your KDE defaults so Plasma handles the main switch natively.
 2.  **Bridging the Gap:** A lightweight background service monitors Plasma's state. When it detects a switch, it instantly applies the "external" settings that Plasma can't touch: changing Kvantum themes, updating GTK configs, reloading Konsole profiles, and running your custom scripts.
 
 ## Uninstallation
