@@ -230,6 +230,13 @@ push_config_to_users() {
         sudo -u "$username" kwriteconfig6 --file "${homedir}/.config/kdeglobals" \
             --group KDE --key AutomaticLookAndFeel true 2>/dev/null || true
 
+        # Copy panel layout so user gets the admin's desktop on next login
+        local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+        if [[ -f "$panel_config" ]]; then
+            sudo cp "$panel_config" "${homedir}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+            sudo chown "$username:" "${homedir}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+        fi
+
         # Install systemd service for this user (if not using global service dir)
         if [[ "$INSTALL_GLOBAL" != true ]]; then
             sudo mkdir -p "$target_service_dir"
@@ -242,6 +249,47 @@ push_config_to_users() {
         sudo -u "$username" systemctl --user enable "$SERVICE_NAME" 2>/dev/null || true
 
         echo -e "    ${GREEN}Done${RESET}"
+    done
+
+    # Install bundled assets to system-wide locations
+    local theme_dir_light="${THEME_INSTALL_DIR:-}/org.kde.custom.light"
+
+    # Install bundled icons and cursors to /usr/share/icons/
+    for asset_type in icons cursors; do
+        for theme_dir in "$theme_dir_light" "${THEME_INSTALL_DIR:-}/org.kde.custom.dark"; do
+            [[ -d "${theme_dir}/contents/${asset_type}" ]] || continue
+            for asset_dir in "${theme_dir}/contents/${asset_type}"/*/; do
+                [[ -d "$asset_dir" ]] || continue
+                local asset_name
+                asset_name="$(basename "$asset_dir")"
+                if [[ ! -d "/usr/share/icons/${asset_name}" ]]; then
+                    sudo cp -r "$asset_dir" "/usr/share/icons/${asset_name}"
+                fi
+            done
+        done
+    done
+
+    # Install bundled wallpapers to /usr/share/wallpapers/
+    if [[ -d "${theme_dir_light}/contents/wallpapers" ]]; then
+        for pack_dir in "${theme_dir_light}/contents/wallpapers"/gloam-*/; do
+            [[ -d "$pack_dir" ]] || continue
+            local pack_name
+            pack_name="$(basename "$pack_dir")"
+            if [[ ! -d "/usr/share/wallpapers/${pack_name}" ]]; then
+                sudo cp -r "$pack_dir" "/usr/share/wallpapers/${pack_name}"
+            fi
+        done
+    fi
+
+    # Install SDDM backgrounds from theme dir to system location
+    for variant in light dark; do
+        local theme_dir_variant="${THEME_INSTALL_DIR:-}/org.kde.custom.${variant}"
+        local sddm_src
+        sddm_src=$(compgen -G "${theme_dir_variant}/contents/sddm/sddm-bg-${variant}.*" 2>/dev/null | head -1)
+        if [[ -n "$sddm_src" && -f "$sddm_src" ]]; then
+            sudo mkdir -p /usr/local/lib/gloam
+            sudo cp "$sddm_src" "/usr/local/lib/gloam/"
+        fi
     done
 }
 
@@ -258,15 +306,47 @@ set_system_defaults() {
     sudo kwriteconfig6 --file "$xdg_globals" --group KDE --key DefaultDarkLookAndFeel "${LAF_DARK:-}"
     sudo kwriteconfig6 --file "$xdg_globals" --group KDE --key AutomaticLookAndFeel true
 
-    # Copy config file to /etc/skel so new users get it
+    # Copy config file and panel layout to /etc/skel so new users get them
     sudo mkdir -p /etc/skel/.config
     sudo cp "$CONFIG_FILE" /etc/skel/.config/gloam.conf
+    local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    if [[ -f "$panel_config" ]]; then
+        sudo cp "$panel_config" /etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
+    fi
 
     # Auto-enable service for all users via default.target.wants symlink
     local service_file="/etc/systemd/user/${SERVICE_NAME}.service"
     if [[ -f "$service_file" ]]; then
         sudo mkdir -p /etc/systemd/user/default.target.wants
         sudo ln -sf "$service_file" /etc/systemd/user/default.target.wants/
+    fi
+
+    # Install bundled icons and cursors to /usr/share/icons/
+    local theme_dir_light="${THEME_INSTALL_DIR:-}/org.kde.custom.light"
+    for asset_type in icons cursors; do
+        for theme_dir in "$theme_dir_light" "${THEME_INSTALL_DIR:-}/org.kde.custom.dark"; do
+            [[ -d "${theme_dir}/contents/${asset_type}" ]] || continue
+            for asset_dir in "${theme_dir}/contents/${asset_type}"/*/; do
+                [[ -d "$asset_dir" ]] || continue
+                local asset_name
+                asset_name="$(basename "$asset_dir")"
+                if [[ ! -d "/usr/share/icons/${asset_name}" ]]; then
+                    sudo cp -r "$asset_dir" "/usr/share/icons/${asset_name}"
+                fi
+            done
+        done
+    done
+
+    # Install bundled wallpapers to /usr/share/wallpapers/
+    if [[ -d "${theme_dir_light}/contents/wallpapers" ]]; then
+        for pack_dir in "${theme_dir_light}/contents/wallpapers"/gloam-*/; do
+            [[ -d "$pack_dir" ]] || continue
+            local pack_name
+            pack_name="$(basename "$pack_dir")"
+            if [[ ! -d "/usr/share/wallpapers/${pack_name}" ]]; then
+                sudo cp -r "$pack_dir" "/usr/share/wallpapers/${pack_name}"
+            fi
+        done
     fi
 
     # Set keyboard shortcut in /etc/xdg/kglobalshortcutsrc
@@ -625,6 +705,7 @@ remove_plasmoid() {
 
     [[ -d "$local_path" ]] && rm -rf "$local_path" && echo "Removed $local_path"
     [[ -d "$global_path" ]] && sudo rm -rf "$global_path" && echo "Removed $global_path"
+    return 0
 }
 
 install_shortcut() {
@@ -666,6 +747,7 @@ remove_shortcut() {
         kwriteconfig6 --file kglobalshortcutsrc --group "services" --group "$SHORTCUT_ID" --key "_launch" --delete
         echo "Removed keyboard shortcut binding"
     fi
+    return 0
 }
 
 cleanup_stale() {
@@ -936,7 +1018,9 @@ setup_sddm_wallpaper() {
 
     # Find the wallpaper pack base directory
     local wp_base
-    if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+    if [[ -n "${WALLPAPER_BASE:-}" ]]; then
+        wp_base="$WALLPAPER_BASE"
+    elif [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
         wp_base="/usr/share/wallpapers"
     else
         wp_base="${HOME}/.local/share/wallpapers"
@@ -1232,8 +1316,8 @@ METADATA
     # Splash screen
     if [[ -n "$splash_theme" ]]; then
         if [[ "$splash_theme" == "None" ]]; then
-            update_defaults_key "[ksplashrc][KSplash]" "Engine" "none"
-            update_defaults_key "[ksplashrc][KSplash]" "Theme" "None"
+            update_defaults_key "[KSplash]" "Engine" "none"
+            update_defaults_key "[KSplash]" "Theme" "None"
             # Remove splash assets since we're disabling it
             if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
                 sudo rm -rf "${theme_dir}/contents/splash"
@@ -1241,8 +1325,8 @@ METADATA
                 rm -rf "${theme_dir}/contents/splash"
             fi
         else
-            update_defaults_key "[ksplashrc][KSplash]" "Engine" "KSplashQML"
-            update_defaults_key "[ksplashrc][KSplash]" "Theme" "$splash_theme"
+            update_defaults_key "[KSplash]" "Engine" "KSplashQML"
+            update_defaults_key "[KSplash]" "Theme" "$splash_theme"
         fi
     fi
 
@@ -1252,24 +1336,196 @@ METADATA
     # Application style (Qt widget style)
     [[ -n "$app_style" ]] && update_defaults_key "[kdeglobals][KDE]" "widgetStyle" "$app_style"
 
-    # Wallpaper (point both light and dark themes to the dynamic pack)
-    if [[ "${WALLPAPER:-}" == true ]]; then
-        update_defaults_key "[Wallpaper][org.kde.image][General]" "Image" "gloam-dynamic"
+    # Bundle color scheme into theme (native LAF support)
+    if [[ -n "$color_scheme" ]]; then
+        local color_src=""
+        for dir in /usr/share/color-schemes "${HOME}/.local/share/color-schemes"; do
+            if [[ -f "${dir}/${color_scheme}.colors" ]]; then
+                color_src="${dir}/${color_scheme}.colors"
+                break
+            fi
+        done
+        if [[ -n "$color_src" ]]; then
+            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                sudo mkdir -p "${theme_dir}/contents/colors"
+                sudo cp "$color_src" "${theme_dir}/contents/colors/${color_scheme}.colors"
+            else
+                mkdir -p "${theme_dir}/contents/colors"
+                cp "$color_src" "${theme_dir}/contents/colors/${color_scheme}.colors"
+            fi
+        fi
     fi
 
-    # Add panel layout
-    local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
-    if [[ -f "$panel_config" ]]; then
+    # Bundle icon theme into theme directory
+    if [[ -n "$icon_theme" ]]; then
+        local icon_src=""
+        for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
+            if [[ -d "${dir}/${icon_theme}" ]]; then
+                icon_src="${dir}/${icon_theme}"
+                break
+            fi
+        done
+        if [[ -n "$icon_src" ]]; then
+            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                sudo mkdir -p "${theme_dir}/contents/icons"
+                sudo cp -r "$icon_src" "${theme_dir}/contents/icons/${icon_theme}"
+            else
+                mkdir -p "${theme_dir}/contents/icons"
+                cp -r "$icon_src" "${theme_dir}/contents/icons/${icon_theme}"
+            fi
+            # Global install: ensure icons are in /usr/share/icons for system-wide access
+            if [[ "$THEME_INSTALL_GLOBAL" == true && "$icon_src" != /usr/share/icons/* ]]; then
+                sudo cp -r "$icon_src" "/usr/share/icons/${icon_theme}"
+                rm -rf "$icon_src"
+                # Record original location for restore on uninstall
+                if [[ "$mode" == "light" ]]; then
+                    ICON_LIGHT_MOVED_FROM="$(dirname "$icon_src")"
+                else
+                    ICON_DARK_MOVED_FROM="$(dirname "$icon_src")"
+                fi
+                "$PLASMA_CHANGEICONS" "$icon_theme" >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+
+    # Bundle cursor theme into theme directory
+    if [[ -n "$cursor_theme" ]]; then
+        local cursor_src=""
+        for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
+            if [[ -d "${dir}/${cursor_theme}/cursors" ]]; then
+                cursor_src="${dir}/${cursor_theme}"
+                break
+            fi
+        done
+        if [[ -n "$cursor_src" ]]; then
+            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                sudo mkdir -p "${theme_dir}/contents/cursors"
+                sudo cp -r "$cursor_src" "${theme_dir}/contents/cursors/${cursor_theme}"
+            else
+                mkdir -p "${theme_dir}/contents/cursors"
+                cp -r "$cursor_src" "${theme_dir}/contents/cursors/${cursor_theme}"
+            fi
+            # Global install: ensure cursors are in /usr/share/icons for system-wide access
+            if [[ "$THEME_INSTALL_GLOBAL" == true && "$cursor_src" != /usr/share/icons/* ]]; then
+                sudo cp -r "$cursor_src" "/usr/share/icons/${cursor_theme}"
+                rm -rf "$cursor_src"
+                # Record original location for restore on uninstall
+                if [[ "$mode" == "light" ]]; then
+                    CURSOR_LIGHT_MOVED_FROM="$(dirname "$cursor_src")"
+                else
+                    CURSOR_DARK_MOVED_FROM="$(dirname "$cursor_src")"
+                fi
+                plasma-apply-cursortheme "$cursor_theme" >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+
+    # Bundle plasma style / desktop theme into theme directory (native LAF support)
+    if [[ -n "$plasma_style" ]]; then
+        local style_src=""
+        for dir in /usr/share/plasma/desktoptheme "${HOME}/.local/share/plasma/desktoptheme"; do
+            if [[ -d "${dir}/${plasma_style}" ]]; then
+                style_src="${dir}/${plasma_style}"
+                break
+            fi
+        done
+        if [[ -n "$style_src" ]]; then
+            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                sudo mkdir -p "${theme_dir}/contents/desktoptheme"
+                sudo cp -r "$style_src"/* "${theme_dir}/contents/desktoptheme/"
+            else
+                mkdir -p "${theme_dir}/contents/desktoptheme"
+                cp -r "$style_src"/* "${theme_dir}/contents/desktoptheme/"
+            fi
+        fi
+    fi
+
+    # Wallpaper - do NOT set Image in defaults; wallpapers are applied explicitly at runtime
+    if [[ "${WALLPAPER:-}" == true ]]; then
+        true  # wallpapers bundled separately after both themes are generated
+    fi
+
+    # Export current panel layout via Plasma's serialization API
+    local layout_js layout_dir="${theme_dir}/contents/layouts"
+    layout_js=$(qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.dumpCurrentLayoutJS 2>/dev/null) || true
+    if [[ -n "$layout_js" ]]; then
         if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
-            sudo mkdir -p "${theme_dir}/contents/layouts"
-            sudo cp "$panel_config" "${theme_dir}/contents/layouts/"
+            sudo mkdir -p "$layout_dir"
+            echo "$layout_js" | sudo tee "${layout_dir}/org.kde.plasma.desktop-layout.js" > /dev/null
         else
-            mkdir -p "${theme_dir}/contents/layouts"
-            cp "$panel_config" "${theme_dir}/contents/layouts/"
+            mkdir -p "$layout_dir"
+            echo "$layout_js" > "${layout_dir}/org.kde.plasma.desktop-layout.js"
         fi
     fi
 
     echo -e "  ${GREEN}Created:${RESET} ${theme_name} (based on $(basename "$base_theme_dir"))"
+}
+
+# Bundle wallpapers and SDDM backgrounds into the custom theme directory
+bundle_wallpapers_and_sddm() {
+    local theme_dir_light="${THEME_INSTALL_DIR}/org.kde.custom.light"
+
+    [[ -d "$theme_dir_light" ]] || return 0
+
+    # Bundle wallpaper packs into light theme dir (canonical location)
+    if [[ "${WALLPAPER:-}" == true ]]; then
+        local wp_src
+        if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+            wp_src="/usr/share/wallpapers"
+        else
+            wp_src="${HOME}/.local/share/wallpapers"
+        fi
+
+        local has_packs=false
+        for pack in gloam-dynamic gloam-light gloam-dark; do
+            [[ -d "${wp_src}/${pack}" ]] && has_packs=true && break
+        done
+
+        if [[ "$has_packs" == true ]]; then
+            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                sudo mkdir -p "${theme_dir_light}/contents/wallpapers"
+                for pack in gloam-dynamic gloam-light gloam-dark; do
+                    [[ -d "${wp_src}/${pack}" ]] || continue
+                    sudo cp -r "${wp_src}/${pack}" "${theme_dir_light}/contents/wallpapers/${pack}"
+                    sudo rm -rf "${wp_src}/${pack}"
+                done
+            else
+                mkdir -p "${theme_dir_light}/contents/wallpapers"
+                for pack in gloam-dynamic gloam-light gloam-dark; do
+                    [[ -d "${wp_src}/${pack}" ]] || continue
+                    cp -r "${wp_src}/${pack}" "${theme_dir_light}/contents/wallpapers/${pack}"
+                    rm -rf "${wp_src}/${pack}"
+                done
+            fi
+
+            # Set WALLPAPER_BASE to point to the bundled location
+            WALLPAPER_BASE="${theme_dir_light}/contents/wallpapers"
+        fi
+    fi
+
+    # Bundle SDDM backgrounds into each theme dir
+    local theme_dir_dark="${THEME_INSTALL_DIR}/org.kde.custom.dark"
+    for variant in light dark; do
+        local sddm_bg
+        sddm_bg=$(compgen -G "/usr/local/lib/gloam/sddm-bg-${variant}.*" 2>/dev/null | head -1)
+        [[ -n "$sddm_bg" && -f "$sddm_bg" ]] || continue
+
+        local target_theme_dir
+        if [[ "$variant" == "light" ]]; then
+            target_theme_dir="$theme_dir_light"
+        else
+            target_theme_dir="$theme_dir_dark"
+        fi
+        [[ -d "$target_theme_dir" ]] || continue
+
+        if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+            sudo mkdir -p "${target_theme_dir}/contents/sddm"
+            sudo cp "$sddm_bg" "${target_theme_dir}/contents/sddm/"
+        else
+            mkdir -p "${target_theme_dir}/contents/sddm"
+            cp "$sddm_bg" "${target_theme_dir}/contents/sddm/"
+        fi
+    done
 }
 
 # Remove custom themes on uninstall
@@ -1281,6 +1537,7 @@ remove_custom_themes() {
         [[ -d "$local_path" ]] && rm -rf "$local_path" && echo "Removed $local_path"
         [[ -d "$global_path" ]] && sudo rm -rf "$global_path" && echo "Removed $global_path"
     done
+    return 0
 }
 
 remove_wallpaper_packs() {
@@ -1290,10 +1547,12 @@ remove_wallpaper_packs() {
         [[ -d "$local_path" ]] && rm -rf "$local_path" && echo "Removed $local_path"
         [[ -d "$global_path" ]] && sudo rm -rf "$global_path" && echo "Removed $global_path"
     done
+    return 0
 }
 
 apply_theme() {
     local laf="$1"
+    local initial="${2:-false}"  # true on startup, skips browser signal to avoid feedback loop
     # Wait for LookAndFeel to finish applying before overriding settings
     sleep 0.5
 
@@ -1304,7 +1563,8 @@ apply_theme() {
     if [[ "$laf" == "$LAF_DARK" ]]; then
         # Kvantum - always apply (not bundleable)
         if [[ -n "$KVANTUM_DARK" ]]; then
-            kvantummanager --set "$KVANTUM_DARK"
+            mkdir -p "${HOME}/.config/Kvantum"
+            kwriteconfig6 --file "${HOME}/.config/Kvantum/kvantum.kvconfig" --group General --key theme "$KVANTUM_DARK"
             refresh_kvantum_style "kvantum-dark"
         fi
 
@@ -1340,13 +1600,9 @@ apply_theme() {
 
         # Wallpapers - switch each surface unless the user has overridden it
         if [[ "${WALLPAPER:-}" == true ]]; then
-            # Desktop & lock screen - only when not using custom themes (custom themes handle via defaults)
-            if [[ "$using_custom_themes" == false ]]; then
-                local wp_base="${HOME}/.local/share/wallpapers"
-                [[ "${THEME_INSTALL_GLOBAL:-}" == true ]] && wp_base="/usr/share/wallpapers"
-                is_gloam_wallpaper desktop && apply_desktop_wallpaper "${wp_base}/gloam-dark"
-                is_gloam_wallpaper lockscreen && apply_lockscreen_wallpaper "${wp_base}/gloam-dark"
-            fi
+            local wp_base="${WALLPAPER_BASE:-${HOME}/.local/share/wallpapers}"
+            is_gloam_wallpaper desktop && apply_desktop_wallpaper "${wp_base}/gloam-dark"
+            is_gloam_wallpaper lockscreen && apply_lockscreen_wallpaper "${wp_base}/gloam-dark"
             # SDDM - always explicit (not handled by custom theme defaults)
             if is_gloam_wallpaper sddm; then
                 local sddm_bg_dark
@@ -1355,8 +1611,9 @@ apply_theme() {
             fi
         fi
 
-        # Browser color scheme - always apply (not bundleable)
-        apply_browser_color_scheme "dark"
+        # Browser color scheme - skip on initial startup to avoid feedback loop
+        # with Plasma's AutomaticLookAndFeel (Plasma sets this via the portal itself)
+        [[ "$initial" != true ]] && apply_browser_color_scheme "dark"
 
         # Custom script - always apply
         if [[ -n "$SCRIPT_DARK" && -x "$SCRIPT_DARK" ]]; then
@@ -1377,7 +1634,8 @@ apply_theme() {
     elif [[ "$laf" == "$LAF_LIGHT" ]]; then
         # Kvantum - always apply (not bundleable)
         if [[ -n "$KVANTUM_LIGHT" ]]; then
-            kvantummanager --set "$KVANTUM_LIGHT"
+            mkdir -p "${HOME}/.config/Kvantum"
+            kwriteconfig6 --file "${HOME}/.config/Kvantum/kvantum.kvconfig" --group General --key theme "$KVANTUM_LIGHT"
             refresh_kvantum_style "kvantum"
         fi
 
@@ -1413,13 +1671,9 @@ apply_theme() {
 
         # Wallpapers - switch each surface unless the user has overridden it
         if [[ "${WALLPAPER:-}" == true ]]; then
-            # Desktop & lock screen - only when not using custom themes (custom themes handle via defaults)
-            if [[ "$using_custom_themes" == false ]]; then
-                local wp_base="${HOME}/.local/share/wallpapers"
-                [[ "${THEME_INSTALL_GLOBAL:-}" == true ]] && wp_base="/usr/share/wallpapers"
-                is_gloam_wallpaper desktop && apply_desktop_wallpaper "${wp_base}/gloam-light"
-                is_gloam_wallpaper lockscreen && apply_lockscreen_wallpaper "${wp_base}/gloam-light"
-            fi
+            local wp_base="${WALLPAPER_BASE:-${HOME}/.local/share/wallpapers}"
+            is_gloam_wallpaper desktop && apply_desktop_wallpaper "${wp_base}/gloam-light"
+            is_gloam_wallpaper lockscreen && apply_lockscreen_wallpaper "${wp_base}/gloam-light"
             # SDDM - always explicit (not handled by custom theme defaults)
             if is_gloam_wallpaper sddm; then
                 local sddm_bg_light
@@ -1428,8 +1682,9 @@ apply_theme() {
             fi
         fi
 
-        # Browser color scheme - always apply (not bundleable)
-        apply_browser_color_scheme "light"
+        # Browser color scheme - skip on initial startup to avoid feedback loop
+        # with Plasma's AutomaticLookAndFeel (Plasma sets this via the portal itself)
+        [[ "$initial" != true ]] && apply_browser_color_scheme "light"
 
         # Custom script - always apply
         if [[ -n "$SCRIPT_LIGHT" && -x "$SCRIPT_LIGHT" ]]; then
@@ -1471,15 +1726,24 @@ do_watch() {
 
     PREV_LAF=$(get_laf)
     log "Initial theme: $PREV_LAF"
-    apply_theme "$PREV_LAF"
+    apply_theme "$PREV_LAF" true
 
+    local last_apply=0
     inotifywait -m -e moved_to "${HOME}/.config" --include 'kdeglobals' |
     while read -r; do
+        # Debounce: ignore events within 3 seconds of last apply to prevent
+        # feedback loop with Plasma's AutomaticLookAndFeel
+        local now
+        now=$(date +%s)
+        if (( now - last_apply < 3 )); then
+            continue
+        fi
         reload_laf_config
         laf=$(get_laf)
         if [[ "$laf" != "$PREV_LAF" ]]; then
             apply_theme "$laf"
             PREV_LAF="$laf"
+            last_apply=$(date +%s)
         fi
     done
 }
@@ -2186,7 +2450,12 @@ do_configure() {
             generate_wallpaper_pack "gloam-dark" "Custom (Dark)" wp_dark_paths wp_empty
 
             echo ""
-            local wallpaper_dir="${HOME}/.local/share/wallpapers/gloam-dynamic"
+            local wallpaper_dir
+            if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+                wallpaper_dir="/usr/share/wallpapers/gloam-dynamic"
+            else
+                wallpaper_dir="${HOME}/.local/share/wallpapers/gloam-dynamic"
+            fi
             echo -n "Applying to desktop... "
             apply_desktop_wallpaper "$wallpaper_dir"
             echo -e "${GREEN}done${RESET}"
@@ -2341,6 +2610,11 @@ do_configure() {
     local BASE_THEME_DARK="${BASE_THEME_DARK:-}"
     local THEME_INSTALL_GLOBAL="${THEME_INSTALL_GLOBAL:-false}"
     local THEME_INSTALL_DIR="${THEME_INSTALL_DIR:-}"
+    local WALLPAPER_BASE="${WALLPAPER_BASE:-}"
+    local ICON_LIGHT_MOVED_FROM="${ICON_LIGHT_MOVED_FROM:-}"
+    local ICON_DARK_MOVED_FROM="${ICON_DARK_MOVED_FROM:-}"
+    local CURSOR_LIGHT_MOVED_FROM="${CURSOR_LIGHT_MOVED_FROM:-}"
+    local CURSOR_DARK_MOVED_FROM="${CURSOR_DARK_MOVED_FROM:-}"
 
     # Check if custom themes already exist (regenerate automatically)
     local custom_themes_exist=false
@@ -2391,6 +2665,7 @@ do_configure() {
 
         generate_custom_theme "light" "$BASE_THEME_LIGHT"
         generate_custom_theme "dark" "$BASE_THEME_DARK"
+        bundle_wallpapers_and_sddm
 
         laf_light="$CUSTOM_THEME_LIGHT"
         laf_dark="$CUSTOM_THEME_DARK"
@@ -2407,6 +2682,14 @@ do_configure() {
             echo -e "Switching to ☀️ Light theme: ${BOLD}$(get_friendly_name laf "$LAF_LIGHT")${RESET}"
             plasma-apply-lookandfeel -a "$LAF_LIGHT"
         fi
+
+        # Re-apply wallpapers from bundled location
+        if [[ "${WALLPAPER:-}" == true && -n "${WALLPAPER_BASE:-}" ]]; then
+            local wp_mode="gloam-dynamic"
+            apply_desktop_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
+            apply_lockscreen_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
+        fi
+
         echo -e "${GREEN}Custom themes updated.${RESET}"
 
     elif has_bundleable_options; then
@@ -2424,6 +2707,7 @@ do_configure() {
 
                 generate_custom_theme "light" "$BASE_THEME_LIGHT"
                 generate_custom_theme "dark" "$BASE_THEME_DARK"
+                bundle_wallpapers_and_sddm
 
                 CUSTOM_THEME_LIGHT="org.kde.custom.light"
                 CUSTOM_THEME_DARK="org.kde.custom.dark"
@@ -2447,6 +2731,13 @@ do_configure() {
                 else
                     echo -e "Switching to ☀️ Light theme: ${BOLD}$(get_friendly_name laf "$LAF_LIGHT")${RESET}"
                     plasma-apply-lookandfeel -a "$LAF_LIGHT"
+                fi
+
+                # Re-apply wallpapers from bundled location
+                if [[ "${WALLPAPER:-}" == true && -n "${WALLPAPER_BASE:-}" ]]; then
+                    local wp_mode="gloam-dynamic"
+                    apply_desktop_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
+                    apply_lockscreen_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
                 fi
 
                 echo -e "${GREEN}Custom themes installed and set as defaults.${RESET}"
@@ -2492,6 +2783,11 @@ CUSTOM_THEME_DARK=${CUSTOM_THEME_DARK:-}
 BASE_THEME_LIGHT=${BASE_THEME_LIGHT:-}
 BASE_THEME_DARK=${BASE_THEME_DARK:-}
 THEME_INSTALL_GLOBAL=${THEME_INSTALL_GLOBAL:-false}
+WALLPAPER_BASE=${WALLPAPER_BASE:-}
+ICON_LIGHT_MOVED_FROM=${ICON_LIGHT_MOVED_FROM:-}
+ICON_DARK_MOVED_FROM=${ICON_DARK_MOVED_FROM:-}
+CURSOR_LIGHT_MOVED_FROM=${CURSOR_LIGHT_MOVED_FROM:-}
+CURSOR_DARK_MOVED_FROM=${CURSOR_DARK_MOVED_FROM:-}
 INSTALL_GLOBAL=${INSTALL_GLOBAL:-false}
 EOF
 
@@ -2714,30 +3010,59 @@ do_remove() {
             echo "Applying original theme: $base_dark"
             plasma-apply-lookandfeel -a "$base_dark" 2>/dev/null || true
         fi
+
+        # Restore icons/cursors that were moved from local to /usr/share/icons/
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+        local _moved_theme _moved_from _global_path
+        for _var_prefix in ICON CURSOR; do
+            for _mode_suffix in LIGHT DARK; do
+                _moved_from="${_var_prefix}_${_mode_suffix}_MOVED_FROM"
+                _moved_from="${!_moved_from:-}"
+                [[ -z "$_moved_from" ]] && continue
+
+                local _theme_var="${_var_prefix}_${_mode_suffix}"
+                _moved_theme="${!_theme_var:-}"
+                [[ -z "$_moved_theme" ]] && continue
+
+                _global_path="/usr/share/icons/${_moved_theme}"
+                [[ -d "$_global_path" ]] || continue
+
+                # Only restore if the original location doesn't already have it
+                if [[ ! -d "${_moved_from}/${_moved_theme}" ]]; then
+                    mkdir -p "$_moved_from"
+                    sudo cp -r "$_global_path" "${_moved_from}/${_moved_theme}"
+                    chown -R "$(id -u):$(id -g)" "${_moved_from}/${_moved_theme}"
+                    echo "Restored ${_moved_theme} to ${_moved_from}/"
+                fi
+                sudo rm -rf "$_global_path"
+                echo "Removed $_global_path"
+            done
+        done
     fi
 
     # Remove config and log files
-    [[ -f "$CONFIG_FILE" ]] && rm "$CONFIG_FILE" && echo "Removed $CONFIG_FILE"
-    [[ -f "$LOG_FILE" ]] && rm "$LOG_FILE" && echo "Removed $LOG_FILE"
+    [[ -f "$CONFIG_FILE" ]] && rm "$CONFIG_FILE" && echo "Removed $CONFIG_FILE" || true
+    [[ -f "$LOG_FILE" ]] && rm "$LOG_FILE" && echo "Removed $LOG_FILE" || true
 
     # Remove service files
     local local_service="${HOME}/.config/systemd/user/${SERVICE_NAME}.service"
-    [[ -f "$local_service" ]] && rm "$local_service" && echo "Removed $local_service"
-    [[ -L "$global_service_link" ]] && sudo rm "$global_service_link" && echo "Removed $global_service_link"
-    [[ -f "$global_service" ]] && sudo rm "$global_service" && echo "Removed $global_service"
+    [[ -f "$local_service" ]] && rm "$local_service" && echo "Removed $local_service" || true
+    [[ -L "$global_service_link" ]] && sudo rm "$global_service_link" && echo "Removed $global_service_link" || true
+    [[ -f "$global_service" ]] && sudo rm "$global_service" && echo "Removed $global_service" || true
 
     # Remove CLI
     local local_cli="${HOME}/.local/bin/gloam"
-    [[ -f "$local_cli" ]] && rm "$local_cli" && echo "Removed $local_cli"
-    [[ -f "$global_cli" ]] && sudo rm "$global_cli" && echo "Removed $global_cli"
+    [[ -f "$local_cli" ]] && rm "$local_cli" && echo "Removed $local_cli" || true
+    [[ -f "$global_cli" ]] && sudo rm "$global_cli" && echo "Removed $global_cli" || true
 
     # Remove global scripts
-    [[ -d "$GLOBAL_SCRIPTS_DIR" ]] && sudo rm -rf "$GLOBAL_SCRIPTS_DIR" && echo "Removed $GLOBAL_SCRIPTS_DIR"
+    [[ -d "$GLOBAL_SCRIPTS_DIR" ]] && sudo rm -rf "$GLOBAL_SCRIPTS_DIR" && echo "Removed $GLOBAL_SCRIPTS_DIR" || true
 
     # Remove SDDM sudoers rule and wrapper script
-    [[ -f /etc/sudoers.d/gloam-sddm ]] && sudo rm /etc/sudoers.d/gloam-sddm && echo "Removed /etc/sudoers.d/gloam-sddm"
-    [[ -f /etc/sudoers.d/gloam-sddm-bg ]] && sudo rm /etc/sudoers.d/gloam-sddm-bg && echo "Removed /etc/sudoers.d/gloam-sddm-bg"
-    [[ -d /usr/local/lib/gloam ]] && sudo rm -rf /usr/local/lib/gloam && echo "Removed /usr/local/lib/gloam"
+    [[ -f /etc/sudoers.d/gloam-sddm ]] && sudo rm /etc/sudoers.d/gloam-sddm && echo "Removed /etc/sudoers.d/gloam-sddm" || true
+    [[ -f /etc/sudoers.d/gloam-sddm-bg ]] && sudo rm /etc/sudoers.d/gloam-sddm-bg && echo "Removed /etc/sudoers.d/gloam-sddm-bg" || true
+    [[ -d /usr/local/lib/gloam ]] && sudo rm -rf /usr/local/lib/gloam && echo "Removed /usr/local/lib/gloam" || true
 
     # Remove plasmoid, shortcut, and custom themes
     remove_plasmoid
@@ -2746,7 +3071,7 @@ do_remove() {
     remove_wallpaper_packs
 
     # Remove system defaults for new users
-    [[ -f "$skel_config" ]] && sudo rm "$skel_config" && echo "Removed $skel_config"
+    [[ -f "$skel_config" ]] && sudo rm "$skel_config" && echo "Removed $skel_config" || true
 
     # Remove keyboard shortcut from /etc/xdg/kglobalshortcutsrc
     if [[ -f "$xdg_shortcuts" ]] && grep -q "$SHORTCUT_ID" "$xdg_shortcuts" 2>/dev/null; then
@@ -2769,7 +3094,7 @@ do_remove() {
     fi
 
     # Remove global installation marker
-    [[ -f "$GLOBAL_INSTALL_MARKER" ]] && sudo rm "$GLOBAL_INSTALL_MARKER" && echo "Removed $GLOBAL_INSTALL_MARKER"
+    [[ -f "$GLOBAL_INSTALL_MARKER" ]] && sudo rm "$GLOBAL_INSTALL_MARKER" && echo "Removed $GLOBAL_INSTALL_MARKER" || true
 
     systemctl --user daemon-reload
     echo -e "${GREEN}Remove complete.${RESET}"
@@ -2857,15 +3182,46 @@ do_status() {
         echo -e "    Custom (Dark): ${YELLOW}not installed${RESET}"
     fi
 
-    # Check if panel layout is included in custom themes
-    local panel_in_global="${custom_light_global}/contents/layouts/plasma-org.kde.plasma.desktop-appletsrc"
-    local panel_in_local="${custom_light_local}/contents/layouts/plasma-org.kde.plasma.desktop-appletsrc"
-    if [[ -f "$panel_in_global" ]]; then
-        echo -e "    Panel layout: ${GREEN}included (global)${RESET}"
-    elif [[ -f "$panel_in_local" ]]; then
-        echo -e "    Panel layout: ${GREEN}included (local)${RESET}"
+    # Show bundled assets in custom themes
+    local custom_theme_dir=""
+    if [[ -d "$custom_light_global" ]]; then
+        custom_theme_dir="$custom_light_global"
+    elif [[ -d "$custom_light_local" ]]; then
+        custom_theme_dir="$custom_light_local"
+    fi
+
+    if [[ -n "$custom_theme_dir" ]]; then
+        local bundled_assets=()
+        [[ -d "${custom_theme_dir}/contents/colors" ]] && bundled_assets+=("colors")
+        [[ -d "${custom_theme_dir}/contents/icons" ]] && bundled_assets+=("icons")
+        [[ -d "${custom_theme_dir}/contents/cursors" ]] && bundled_assets+=("cursors")
+        [[ -d "${custom_theme_dir}/contents/desktoptheme" ]] && bundled_assets+=("plasma style")
+        [[ -d "${custom_theme_dir}/contents/wallpapers" ]] && bundled_assets+=("wallpapers")
+        [[ -d "${custom_theme_dir}/contents/sddm" ]] && bundled_assets+=("sddm background")
+
+        # Check dark theme sddm too
+        local custom_dark_dir=""
+        [[ -d "$custom_dark_global" ]] && custom_dark_dir="$custom_dark_global"
+        [[ -z "$custom_dark_dir" && -d "$custom_dark_local" ]] && custom_dark_dir="$custom_dark_local"
+        if [[ -n "$custom_dark_dir" && -d "${custom_dark_dir}/contents/sddm" ]] && ! [[ " ${bundled_assets[*]} " == *" sddm background "* ]]; then
+            bundled_assets+=("sddm background")
+        fi
+
+        if [[ ${#bundled_assets[@]} -gt 0 ]]; then
+            local joined
+            joined=$(IFS=", "; echo "${bundled_assets[*]}")
+            echo -e "    Bundled assets: ${GREEN}${joined}${RESET}"
+        else
+            echo -e "    Bundled assets: ${YELLOW}none${RESET}"
+        fi
+    fi
+
+    # Check if panel layout is in /etc/skel for new users
+    local skel_panel="/etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc"
+    if [[ -f "$skel_panel" ]]; then
+        echo -e "    Panel layout: ${GREEN}in /etc/skel${RESET}"
     else
-        echo -e "    Panel layout: ${YELLOW}not included${RESET}"
+        echo -e "    Panel layout: ${YELLOW}not in /etc/skel${RESET}"
     fi
 
     # Check splash service status
@@ -2945,6 +3301,10 @@ do_status() {
         echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
         echo "    Konsole: ${KONSOLE_DARK:-unset}"
         echo "    Script: ${SCRIPT_DARK:-unset}"
+        if [[ -n "${WALLPAPER_BASE:-}" ]]; then
+            echo ""
+            echo "    Wallpaper base: ${WALLPAPER_BASE}"
+        fi
     else
         echo "Configuration: not installed"
     fi
