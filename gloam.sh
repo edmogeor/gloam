@@ -3,7 +3,7 @@
 # gloam.sh
 # gloam: Syncs Kvantum, GTK, and custom scripts with Plasma 6's native light/dark (day/night) theme switching - and more.
 #   configure [options]  Scan themes, save config, generate watcher script, enable systemd service
-#                        Options: -k|--kvantum -i|--icons -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -W|--wallpaper -w|--widget -K|--shortcut
+#                        Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut
 #                        With no options, configures all. With options, only reconfigures specified types.
 #   uninstall            Stop service, remove all installed files
 #   status               Show service status and current configuration
@@ -1561,7 +1561,7 @@ do_configure() {
             help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -k|--kvantum -p|--style -d|--decorations -c|--colors -i|--icons -C|--cursors -g|--gtk -o|--konsole -s|--script -S|--splash -l|--login -a|--appstyle -W|--wallpaper -w|--widget -K|--shortcut" >&2
+                echo "Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut" >&2
                 exit 1
                 ;;
         esac
@@ -1636,10 +1636,52 @@ do_configure() {
         exit 1
     fi
 
+    # Select Color Schemes
+    if [[ "$configure_all" == true || "$configure_colors" == true ]]; then
+    echo ""
+    local choice
+    read -rp "Configure color schemes? (normally automatically set by global theme) [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for color schemes..."
+        mapfile -t color_schemes < <(scan_color_schemes)
+
+        if [[ ${#color_schemes[@]} -eq 0 ]]; then
+            echo "No color schemes found, skipping."
+            COLOR_LIGHT=""
+            COLOR_DARK=""
+        else
+            echo ""
+            echo -e "${BOLD}Available color schemes:${RESET}"
+            for i in "${!color_schemes[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${color_schemes[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ LIGHT mode color scheme [1-${#color_schemes[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
+                COLOR_LIGHT="${color_schemes[$((choice - 1))]}"
+
+                read -rp "Select 🌙 DARK mode color scheme [1-${#color_schemes[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
+                    COLOR_DARK="${color_schemes[$((choice - 1))]}"
+                else
+                    COLOR_LIGHT=""
+                    COLOR_DARK=""
+                fi
+            else
+                COLOR_LIGHT=""
+                COLOR_DARK=""
+            fi
+        fi
+    else
+        COLOR_LIGHT=""
+        COLOR_DARK=""
+    fi
+    fi
+
     # Select Kvantum themes
     if [[ "$configure_all" == true || "$configure_kvantum" == true ]]; then
     echo ""
-    local choice
     read -rp "Configure Kvantum themes? (not automatically set by global theme) [y/N]: " choice
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         echo "Scanning for Kvantum themes..."
@@ -1681,6 +1723,95 @@ do_configure() {
     else
         KVANTUM_LIGHT=""
         KVANTUM_DARK=""
+    fi
+    fi
+
+    # Select Application Style (Qt widget style)
+    if [[ "$configure_all" == true || "$configure_appstyle" == true ]]; then
+    echo ""
+    read -rp "Configure application style? (Qt widget style - Breeze, Fusion, etc.) [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for application styles..."
+        local app_style_names=()
+        while IFS= read -r name; do
+            app_style_names+=("$name")
+        done < <(scan_app_styles)
+
+        if [[ ${#app_style_names[@]} -eq 0 ]]; then
+            echo -e "${YELLOW}No application styles found.${RESET}"
+            APPSTYLE_LIGHT=""
+            APPSTYLE_DARK=""
+        else
+            echo ""
+            echo -e "${BOLD}Available application styles:${RESET}"
+            for i in "${!app_style_names[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${app_style_names[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ LIGHT mode application style [1-${#app_style_names[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
+                APPSTYLE_LIGHT="${app_style_names[$((choice - 1))]}"
+            else
+                APPSTYLE_LIGHT=""
+            fi
+
+            read -rp "Select 🌙 DARK mode application style [1-${#app_style_names[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
+                APPSTYLE_DARK="${app_style_names[$((choice - 1))]}"
+            else
+                APPSTYLE_DARK=""
+            fi
+        fi
+    else
+        APPSTYLE_LIGHT=""
+        APPSTYLE_DARK=""
+    fi
+    fi
+
+    # Select GTK/Flatpak themes
+    if [[ "$configure_all" == true || "$configure_gtk" == true ]]; then
+    echo ""
+    read -rp "Configure GTK/Flatpak themes? (not automatically set by global theme) [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for GTK themes..."
+        mapfile -t gtk_themes < <(scan_gtk_themes)
+
+        if [[ ${#gtk_themes[@]} -eq 0 ]]; then
+            echo "No GTK themes found, skipping."
+            GTK_LIGHT=""
+            GTK_DARK=""
+        else
+            echo ""
+            echo -e "${BOLD}Available GTK themes:${RESET}"
+            for i in "${!gtk_themes[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${gtk_themes[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ LIGHT mode GTK theme [1-${#gtk_themes[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#gtk_themes[@]} )); then
+                GTK_LIGHT="${gtk_themes[$((choice - 1))]}"
+
+                read -rp "Select 🌙 DARK mode GTK theme [1-${#gtk_themes[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#gtk_themes[@]} )); then
+                    GTK_DARK="${gtk_themes[$((choice - 1))]}"
+                    if command -v flatpak &>/dev/null; then
+                        setup_flatpak_permissions
+                        echo -e "${YELLOW}Note:${RESET} Flatpak apps may need to be closed and reopened to update theme."
+                    fi
+                else
+                    GTK_LIGHT=""
+                    GTK_DARK=""
+                fi
+            else
+                GTK_LIGHT=""
+                GTK_DARK=""
+            fi
+        fi
+    else
+        GTK_LIGHT=""
+        GTK_DARK=""
     fi
     fi
 
@@ -1770,48 +1901,6 @@ do_configure() {
     else
         DECORATION_LIGHT=""
         DECORATION_DARK=""
-    fi
-    fi
-
-    # Select Color Schemes
-    if [[ "$configure_all" == true || "$configure_colors" == true ]]; then
-    echo ""
-    read -rp "Configure color schemes? (normally automatically set by global theme) [y/N]: " choice
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        echo "Scanning for color schemes..."
-        mapfile -t color_schemes < <(scan_color_schemes)
-
-        if [[ ${#color_schemes[@]} -eq 0 ]]; then
-            echo "No color schemes found, skipping."
-            COLOR_LIGHT=""
-            COLOR_DARK=""
-        else
-            echo ""
-            echo -e "${BOLD}Available color schemes:${RESET}"
-            for i in "${!color_schemes[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${color_schemes[$i]}"
-            done
-
-            echo ""
-            read -rp "Select ☀️ LIGHT mode color scheme [1-${#color_schemes[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
-                COLOR_LIGHT="${color_schemes[$((choice - 1))]}"
-
-                read -rp "Select 🌙 DARK mode color scheme [1-${#color_schemes[@]}]: " choice
-                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#color_schemes[@]} )); then
-                    COLOR_DARK="${color_schemes[$((choice - 1))]}"
-                else
-                    COLOR_LIGHT=""
-                    COLOR_DARK=""
-                fi
-            else
-                COLOR_LIGHT=""
-                COLOR_DARK=""
-            fi
-        fi
-    else
-        COLOR_LIGHT=""
-        COLOR_DARK=""
     fi
     fi
 
@@ -1920,94 +2009,6 @@ do_configure() {
     fi
     fi
 
-    # Select GTK/Flatpak themes
-    if [[ "$configure_all" == true || "$configure_gtk" == true ]]; then
-    echo ""
-    read -rp "Configure GTK/Flatpak themes? (not automatically set by global theme) [y/N]: " choice
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        echo "Scanning for GTK themes..."
-        mapfile -t gtk_themes < <(scan_gtk_themes)
-
-        if [[ ${#gtk_themes[@]} -eq 0 ]]; then
-            echo "No GTK themes found, skipping."
-            GTK_LIGHT=""
-            GTK_DARK=""
-        else
-            echo ""
-            echo -e "${BOLD}Available GTK themes:${RESET}"
-            for i in "${!gtk_themes[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${gtk_themes[$i]}"
-            done
-
-            echo ""
-            read -rp "Select ☀️ LIGHT mode GTK theme [1-${#gtk_themes[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#gtk_themes[@]} )); then
-                GTK_LIGHT="${gtk_themes[$((choice - 1))]}"
-
-                read -rp "Select 🌙 DARK mode GTK theme [1-${#gtk_themes[@]}]: " choice
-                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#gtk_themes[@]} )); then
-                    GTK_DARK="${gtk_themes[$((choice - 1))]}"
-                    if command -v flatpak &>/dev/null; then
-                        setup_flatpak_permissions
-                        echo -e "${YELLOW}Note:${RESET} Flatpak apps may need to be closed and reopened to update theme."
-                    fi
-                else
-                    GTK_LIGHT=""
-                    GTK_DARK=""
-                fi
-            else
-                GTK_LIGHT=""
-                GTK_DARK=""
-            fi
-        fi
-    else
-        GTK_LIGHT=""
-        GTK_DARK=""
-    fi
-    fi
-
-    # Select Konsole profiles
-    if [[ "$configure_all" == true || "$configure_konsole" == true ]]; then
-    echo ""
-    read -rp "Configure Konsole profiles? (not automatically set by global theme) [y/N]: " choice
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        echo "Scanning for Konsole profiles..."
-        mapfile -t konsole_profiles < <(scan_konsole_profiles)
-
-        if [[ ${#konsole_profiles[@]} -eq 0 ]]; then
-            echo "No Konsole profiles found, skipping."
-            KONSOLE_LIGHT=""
-            KONSOLE_DARK=""
-        else
-            echo ""
-            echo -e "${BOLD}Available Konsole profiles:${RESET}"
-            for i in "${!konsole_profiles[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${konsole_profiles[$i]}"
-            done
-
-            echo ""
-            read -rp "Select ☀️ LIGHT mode Konsole profile [1-${#konsole_profiles[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#konsole_profiles[@]} )); then
-                KONSOLE_LIGHT="${konsole_profiles[$((choice - 1))]}"
-
-                read -rp "Select 🌙 DARK mode Konsole profile [1-${#konsole_profiles[@]}]: " choice
-                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#konsole_profiles[@]} )); then
-                    KONSOLE_DARK="${konsole_profiles[$((choice - 1))]}"
-                else
-                    KONSOLE_LIGHT=""
-                    KONSOLE_DARK=""
-                fi
-            else
-                KONSOLE_LIGHT=""
-                KONSOLE_DARK=""
-            fi
-        fi
-    else
-        KONSOLE_LIGHT=""
-        KONSOLE_DARK=""
-    fi
-    fi
-
     # Select Splash Screens
     if [[ "$configure_all" == true || "$configure_splash" == true ]]; then
     echo ""
@@ -2106,49 +2107,6 @@ do_configure() {
     fi
     fi
 
-    # Select Application Style (Qt widget style)
-    if [[ "$configure_all" == true || "$configure_appstyle" == true ]]; then
-    echo ""
-    read -rp "Configure application style? (Qt widget style - Breeze, Fusion, etc.) [y/N]: " choice
-    if [[ "$choice" =~ ^[Yy]$ ]]; then
-        echo "Scanning for application styles..."
-        local app_style_names=()
-        while IFS= read -r name; do
-            app_style_names+=("$name")
-        done < <(scan_app_styles)
-
-        if [[ ${#app_style_names[@]} -eq 0 ]]; then
-            echo -e "${YELLOW}No application styles found.${RESET}"
-            APPSTYLE_LIGHT=""
-            APPSTYLE_DARK=""
-        else
-            echo ""
-            echo -e "${BOLD}Available application styles:${RESET}"
-            for i in "${!app_style_names[@]}"; do
-                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${app_style_names[$i]}"
-            done
-
-            echo ""
-            read -rp "Select ☀️ LIGHT mode application style [1-${#app_style_names[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
-                APPSTYLE_LIGHT="${app_style_names[$((choice - 1))]}"
-            else
-                APPSTYLE_LIGHT=""
-            fi
-
-            read -rp "Select 🌙 DARK mode application style [1-${#app_style_names[@]}]: " choice
-            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#app_style_names[@]} )); then
-                APPSTYLE_DARK="${app_style_names[$((choice - 1))]}"
-            else
-                APPSTYLE_DARK=""
-            fi
-        fi
-    else
-        APPSTYLE_LIGHT=""
-        APPSTYLE_DARK=""
-    fi
-    fi
-
     # Configure day/night wallpapers
     if [[ "$configure_all" == true || "$configure_wallpaper" == true ]]; then
     echo ""
@@ -2213,6 +2171,48 @@ do_configure() {
     fi
     fi
 
+    # Select Konsole profiles
+    if [[ "$configure_all" == true || "$configure_konsole" == true ]]; then
+    echo ""
+    read -rp "Configure Konsole profiles? (not automatically set by global theme) [y/N]: " choice
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "Scanning for Konsole profiles..."
+        mapfile -t konsole_profiles < <(scan_konsole_profiles)
+
+        if [[ ${#konsole_profiles[@]} -eq 0 ]]; then
+            echo "No Konsole profiles found, skipping."
+            KONSOLE_LIGHT=""
+            KONSOLE_DARK=""
+        else
+            echo ""
+            echo -e "${BOLD}Available Konsole profiles:${RESET}"
+            for i in "${!konsole_profiles[@]}"; do
+                printf "  ${BLUE}%3d)${RESET} %s\n" "$((i + 1))" "${konsole_profiles[$i]}"
+            done
+
+            echo ""
+            read -rp "Select ☀️ LIGHT mode Konsole profile [1-${#konsole_profiles[@]}]: " choice
+            if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#konsole_profiles[@]} )); then
+                KONSOLE_LIGHT="${konsole_profiles[$((choice - 1))]}"
+
+                read -rp "Select 🌙 DARK mode Konsole profile [1-${#konsole_profiles[@]}]: " choice
+                if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#konsole_profiles[@]} )); then
+                    KONSOLE_DARK="${konsole_profiles[$((choice - 1))]}"
+                else
+                    KONSOLE_LIGHT=""
+                    KONSOLE_DARK=""
+                fi
+            else
+                KONSOLE_LIGHT=""
+                KONSOLE_DARK=""
+            fi
+        fi
+    else
+        KONSOLE_LIGHT=""
+        KONSOLE_DARK=""
+    fi
+    fi
+
     # Configure custom scripts
     if [[ "$configure_all" == true || "$configure_script" == true ]]; then
     echo ""
@@ -2262,32 +2262,33 @@ do_configure() {
     echo ""
     echo "Configuration summary:"
     echo -e "☀️ Light theme: ${BOLD}$(get_friendly_name laf "$laf_light")${RESET}"
+    echo "    Colors: ${COLOR_LIGHT:-unchanged}"
     echo "    Kvantum: ${KVANTUM_LIGHT:-unchanged}"
+    echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
+    echo "    GTK: ${GTK_LIGHT:-unchanged}"
     echo "    Style: ${STYLE_LIGHT:-unchanged}"
     echo "    Decorations: $([[ -n "${DECORATION_LIGHT:-}" ]] && get_friendly_name decoration "$DECORATION_LIGHT" || echo "unchanged")"
-    echo "    Colors: ${COLOR_LIGHT:-unchanged}"
     echo "    Icons: ${ICON_LIGHT:-unchanged}"
     echo "    Cursors: ${CURSOR_LIGHT:-unchanged}"
-    echo "    GTK: ${GTK_LIGHT:-unchanged}"
-    echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
     echo "    Splash: $(get_friendly_name splash "${SPLASH_LIGHT:-}")"
     echo "    Login: $(get_friendly_name sddm "${SDDM_LIGHT:-}")"
-    echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
+    echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
+    echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
     echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
     echo -e "🌙 Dark theme:  ${BOLD}$(get_friendly_name laf "$laf_dark")${RESET}"
+    echo "    Colors: ${COLOR_DARK:-unchanged}"
     echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
+    echo "    App style: ${APPSTYLE_DARK:-unchanged}"
+    echo "    GTK: ${GTK_DARK:-unchanged}"
     echo "    Style: ${STYLE_DARK:-unchanged}"
     echo "    Decorations: $([[ -n "${DECORATION_DARK:-}" ]] && get_friendly_name decoration "$DECORATION_DARK" || echo "unchanged")"
-    echo "    Colors: ${COLOR_DARK:-unchanged}"
     echo "    Icons: ${ICON_DARK:-unchanged}"
     echo "    Cursors: ${CURSOR_DARK:-unchanged}"
-    echo "    GTK: ${GTK_DARK:-unchanged}"
-    echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
     echo "    Splash: $(get_friendly_name splash "${SPLASH_DARK:-}")"
     echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
-    echo "    App style: ${APPSTYLE_DARK:-unchanged}"
-    echo "    Script: ${SCRIPT_DARK:-unchanged}"
     echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
+    echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
+    echo "    Script: ${SCRIPT_DARK:-unchanged}"
 
     # Preserve values from config if doing partial reconfigure
     local CUSTOM_THEME_LIGHT="${CUSTOM_THEME_LIGHT:-}"
@@ -2873,32 +2874,33 @@ do_status() {
         # shellcheck source=/dev/null
         source "$CONFIG_FILE"
         echo -e "☀️ Light theme: ${BOLD}$(get_friendly_name laf "$LAF_LIGHT")${RESET} ($LAF_LIGHT)"
+        echo "    Colors: ${COLOR_LIGHT:-unchanged}"
         echo "    Kvantum: ${KVANTUM_LIGHT:-unchanged}"
+        echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
+        echo "    GTK: ${GTK_LIGHT:-unchanged}"
         echo "    Style: ${STYLE_LIGHT:-unchanged}"
         echo "    Decorations: $([[ -n "${DECORATION_LIGHT:-}" ]] && get_friendly_name decoration "$DECORATION_LIGHT" || echo "unchanged")"
-        echo "    Colors: ${COLOR_LIGHT:-unchanged}"
         echo "    Icons: ${ICON_LIGHT:-unchanged}"
         echo "    Cursors: ${CURSOR_LIGHT:-unchanged}"
-        echo "    GTK: ${GTK_LIGHT:-unchanged}"
-        echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
         echo "    Splash: $(get_friendly_name splash "${SPLASH_LIGHT:-}")"
         echo "    Login: $(get_friendly_name sddm "${SDDM_LIGHT:-}")"
-        echo "    App style: ${APPSTYLE_LIGHT:-unchanged}"
+        echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
+        echo "    Konsole: ${KONSOLE_LIGHT:-unchanged}"
         echo "    Script: ${SCRIPT_LIGHT:-unchanged}"
         echo -e "🌙 Dark theme:  ${BOLD}$(get_friendly_name laf "$LAF_DARK")${RESET} ($LAF_DARK)"
+        echo "    Colors: ${COLOR_DARK:-unchanged}"
         echo "    Kvantum: ${KVANTUM_DARK:-unchanged}"
+        echo "    App style: ${APPSTYLE_DARK:-unchanged}"
+        echo "    GTK: ${GTK_DARK:-unchanged}"
         echo "    Style: ${STYLE_DARK:-unchanged}"
         echo "    Decorations: $([[ -n "${DECORATION_DARK:-}" ]] && get_friendly_name decoration "$DECORATION_DARK" || echo "unchanged")"
-        echo "    Colors: ${COLOR_DARK:-unchanged}"
         echo "    Icons: ${ICON_DARK:-unchanged}"
         echo "    Cursors: ${CURSOR_DARK:-unchanged}"
-        echo "    GTK: ${GTK_DARK:-unchanged}"
-        echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
         echo "    Splash: $(get_friendly_name splash "${SPLASH_DARK:-}")"
         echo "    Login: $(get_friendly_name sddm "${SDDM_DARK:-}")"
-        echo "    App style: ${APPSTYLE_DARK:-unchanged}"
-        echo "    Script: ${SCRIPT_DARK:-unchanged}"
         echo "    Wallpaper: ${WALLPAPER:+Custom (Dynamic, Light, Dark)}"
+        echo "    Konsole: ${KONSOLE_DARK:-unchanged}"
+        echo "    Script: ${SCRIPT_DARK:-unchanged}"
     else
         echo "Configuration: not installed"
     fi
@@ -2914,18 +2916,18 @@ Description:
   With options, only reconfigures the specified components.
 
 Options:
-  -k, --kvantum       Configure Kvantum themes only
-  -i, --icons         Configure icon themes only
-  -g, --gtk           Configure GTK themes only
-  -o, --konsole       Configure Konsole profiles only
-  -S, --splash        Configure splash screens only
-  -l, --login         Configure login screen (SDDM) themes
-  -a, --appstyle      Configure application style (Qt widget style)
-  -W, --wallpaper     Configure day/night wallpapers
   -c, --colors        Configure color schemes only
+  -k, --kvantum       Configure Kvantum themes only
+  -a, --appstyle      Configure application style (Qt widget style)
+  -g, --gtk           Configure GTK themes only
   -p, --style         Configure Plasma styles only
   -d, --decorations   Configure window decorations only
+  -i, --icons         Configure icon themes only
   -C, --cursors       Configure cursor themes only
+  -S, --splash        Configure splash screens only
+  -l, --login         Configure login screen (SDDM) themes
+  -W, --wallpaper     Configure day/night wallpapers
+  -o, --konsole       Configure Konsole profiles only
   -s, --script        Configure custom scripts only
   -w, --widget        Install/reinstall panel widget
   -K, --shortcut      Install/reinstall keyboard shortcut (Meta+Shift+L)

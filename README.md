@@ -26,19 +26,19 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 ## Features
 
 - **Custom Theme Generation:** Bundles your overrides into proper Plasma Global Themes for native switching.
+- **Color Scheme Sync:** Switches Plasma color schemes for light/dark modes.
 - **Kvantum Integration:** Automatically switches Kvantum themes for application styling.
 - **Application Style Sync:** Switches Qt widget styles (Breeze, Fusion, etc.) for light/dark modes.
-- **Plasma Style Sync:** Switches Plasma desktop themes (panel, widgets appearance).
-- **Window Decorations:** Changes window title bar styles for light/dark modes.
-- **Color Scheme Sync:** Switches Plasma color schemes for light/dark modes.
-- **Cursor Theme Sync:** Changes cursor themes for light/dark modes.
-- **Icon Theme Sync:** Changes icon packs for light/dark modes.
 - **GTK Theme Sync:** Updates GTK 3/4 themes to match your Plasma preference.
 - **Flatpak Support:** Automatically applies GTK, Kvantum, and icon themes to Flatpak apps.
-- **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
+- **Plasma Style Sync:** Switches Plasma desktop themes (panel, widgets appearance).
+- **Window Decorations:** Changes window title bar styles for light/dark modes.
+- **Icon Theme Sync:** Changes icon packs for light/dark modes.
+- **Cursor Theme Sync:** Changes cursor themes for light/dark modes.
 - **Splash Screen:** Optionally overrides or disables the splash screen.
 - **Login Screen (SDDM):** Switches SDDM login screen themes for light/dark modes.
 - **Wallpaper Generation:** Creates dynamic wallpaper packs from your images and applies them to desktop, lock screen, and SDDM.
+- **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
 - **Custom Scripts:** Run arbitrary scripts when switching to light or dark mode.
 - **Systemd Service:** User-level systemd service watches for changes automatically.
 - **Panel Widget:** Optional Light/Dark Mode Toggle widget for your panel.
@@ -85,7 +85,7 @@ cd gloam && ./gloam.sh configure
 ```
 
 The `configure` command will:
-- Scan your system for available themes (Kvantum, application styles, Plasma styles, window decorations, color schemes, cursors, icons, GTK, etc.).
+- Scan your system for available themes (color schemes, Kvantum, application styles, GTK, Plasma styles, window decorations, icons, cursors, etc.).
 - Ask you to select which ones to use for **light** and **dark** mode.
 - Detect your current Plasma day/night global themes.
 - Generate custom Plasma Global Themes from your selections.
@@ -99,18 +99,18 @@ The `configure` command will:
 You can re-configure specific components without going through the whole wizard:
 
 ```bash
+gloam configure --colors       # Color schemes
 gloam configure --kvantum      # Kvantum themes
 gloam configure --appstyle     # Application style (Qt widget style)
+gloam configure --gtk          # GTK themes
 gloam configure --style        # Plasma styles
 gloam configure --decorations  # Window decorations
-gloam configure --colors       # Color schemes
-gloam configure --cursors      # Cursor themes
 gloam configure --icons        # Icon themes
-gloam configure --gtk          # GTK themes
-gloam configure --konsole      # Konsole profiles
+gloam configure --cursors      # Cursor themes
 gloam configure --splash       # Splash screen
 gloam configure --login        # Login screen (SDDM) themes
 gloam configure --wallpaper    # Day/night wallpapers
+gloam configure --konsole      # Konsole profiles
 gloam configure --script       # Custom scripts
 gloam configure --widget       # Panel widget
 gloam configure --shortcut     # Keyboard shortcut
