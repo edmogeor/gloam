@@ -471,11 +471,22 @@ generate_wallpaper_pack() {
     local display_name="$2"
     local -n _light_imgs=$3
     local -n _dark_imgs=$4
-    local wallpaper_dir="${HOME}/.local/share/wallpapers/${pack_name}"
+    local wallpaper_dir
+
+    if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+        wallpaper_dir="/usr/share/wallpapers/${pack_name}"
+    else
+        wallpaper_dir="${HOME}/.local/share/wallpapers/${pack_name}"
+    fi
 
     # Clean and create directory structure
-    rm -rf "$wallpaper_dir"
-    mkdir -p "${wallpaper_dir}/contents/images"
+    if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+        sudo rm -rf "$wallpaper_dir"
+        sudo mkdir -p "${wallpaper_dir}/contents/images"
+    else
+        rm -rf "$wallpaper_dir"
+        mkdir -p "${wallpaper_dir}/contents/images"
+    fi
 
     # Copy light images
     for img in "${_light_imgs[@]}"; do
@@ -484,24 +495,37 @@ generate_wallpaper_pack() {
         dims=$(get_image_dimensions "$img")
         [[ -z "$dims" ]] && continue
         ext="${img##*.}"
-        cp "$img" "${wallpaper_dir}/contents/images/${dims}.${ext,,}"
+        if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+            sudo cp "$img" "${wallpaper_dir}/contents/images/${dims}.${ext,,}"
+        else
+            cp "$img" "${wallpaper_dir}/contents/images/${dims}.${ext,,}"
+        fi
     done
 
     # Copy dark images (if any)
     if [[ ${#_dark_imgs[@]} -gt 0 ]]; then
-        mkdir -p "${wallpaper_dir}/contents/images_dark"
+        if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+            sudo mkdir -p "${wallpaper_dir}/contents/images_dark"
+        else
+            mkdir -p "${wallpaper_dir}/contents/images_dark"
+        fi
         for img in "${_dark_imgs[@]}"; do
             [[ -f "$img" ]] || continue
             local dims ext
             dims=$(get_image_dimensions "$img")
             [[ -z "$dims" ]] && continue
             ext="${img##*.}"
-            cp "$img" "${wallpaper_dir}/contents/images_dark/${dims}.${ext,,}"
+            if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+                sudo cp "$img" "${wallpaper_dir}/contents/images_dark/${dims}.${ext,,}"
+            else
+                cp "$img" "${wallpaper_dir}/contents/images_dark/${dims}.${ext,,}"
+            fi
         done
     fi
 
     # Generate metadata.json
-    cat > "${wallpaper_dir}/metadata.json" <<METADATA
+    if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+        sudo tee "${wallpaper_dir}/metadata.json" > /dev/null <<METADATA
 {
     "KPlugin": {
         "Authors": [
@@ -515,6 +539,22 @@ generate_wallpaper_pack() {
     }
 }
 METADATA
+    else
+        cat > "${wallpaper_dir}/metadata.json" <<METADATA
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "gloam"
+            }
+        ],
+        "Id": "${pack_name}",
+        "License": "CC-BY-SA-4.0",
+        "Name": "${display_name}"
+    }
+}
+METADATA
+    fi
 
     echo -e "  ${GREEN}Created:${RESET} ${display_name} — ${wallpaper_dir}/"
 }
@@ -853,14 +893,19 @@ SCRIPT
 }
 
 setup_sddm_wallpaper() {
-    local -n _sddm_light=$1
-    local -n _sddm_dark=$2
-
     sudo mkdir -p /usr/local/lib/gloam
 
-    # Find the largest resolution image for each mode
+    # Find the wallpaper pack base directory
+    local wp_base
+    if [[ "${THEME_INSTALL_GLOBAL:-false}" == true ]]; then
+        wp_base="/usr/share/wallpapers"
+    else
+        wp_base="${HOME}/.local/share/wallpapers"
+    fi
+
+    # Pick the largest image from each pack for SDDM
     local best_light="" best_dark="" best_pixels=0
-    for img in "${_sddm_light[@]}"; do
+    for img in "${wp_base}/gloam-light/contents/images/"*; do
         [[ -f "$img" ]] || continue
         local dims
         dims=$(get_image_dimensions "$img")
@@ -874,7 +919,7 @@ setup_sddm_wallpaper() {
     done
 
     best_pixels=0
-    for img in "${_sddm_dark[@]}"; do
+    for img in "${wp_base}/gloam-dark/contents/images/"*; do
         [[ -f "$img" ]] || continue
         local dims
         dims=$(get_image_dimensions "$img")
@@ -1062,17 +1107,18 @@ generate_custom_theme() {
     author_name=$(echo "$author_block" | grep -m1 '"Name"[[:space:]]*:' | sed 's/.*"Name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
     author_email=$(echo "$author_block" | grep -m1 '"Email"[[:space:]]*:' | sed 's/.*"Email"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/') || true
     [[ -z "$author_name" ]] && author_name="Unknown"
+    local original_credit
     if [[ -n "$author_email" ]]; then
-        original_authors='[{ "Email": "'"$author_email"'", "Name": "'"$author_name"'" }]'
+        original_credit='{ "Email": "'"$author_email"'", "Name": "'"$author_name"'" }'
     else
-        original_authors='[{ "Name": "'"$author_name"'" }]'
+        original_credit='{ "Name": "'"$author_name"'" }'
     fi
 
     local metadata
     metadata=$(cat <<METADATA
 {
     "KPlugin": {
-        "Authors": ${original_authors},
+        "Authors": [{ "Name": "gloam" }, ${original_credit}],
         "Description": "Custom ${mode} theme based on $(basename "$base_theme_dir")",
         "Id": "${theme_id}",
         "Name": "${theme_name}",
@@ -1195,8 +1241,10 @@ remove_custom_themes() {
 
 remove_wallpaper_packs() {
     for pack in gloam-dynamic gloam-light gloam-dark; do
-        local path="${HOME}/.local/share/wallpapers/${pack}"
-        [[ -d "$path" ]] && rm -rf "$path" && echo "Removed $path"
+        local local_path="${HOME}/.local/share/wallpapers/${pack}"
+        local global_path="/usr/share/wallpapers/${pack}"
+        [[ -d "$local_path" ]] && rm -rf "$local_path" && echo "Removed $local_path"
+        [[ -d "$global_path" ]] && sudo rm -rf "$global_path" && echo "Removed $global_path"
     done
 }
 
@@ -2130,7 +2178,7 @@ do_configure() {
             if [[ "$sddm_wp_choice" =~ ^[Yy]$ ]]; then
                 sudo -v || { echo -e "${RED}Sudo required for SDDM wallpaper.${RESET}"; sddm_wp_choice="n"; }
                 if [[ "$sddm_wp_choice" =~ ^[Yy]$ ]]; then
-                    setup_sddm_wallpaper wp_light_paths wp_dark_paths
+                    setup_sddm_wallpaper
                     echo -e "  ${GREEN}SDDM backgrounds installed.${RESET}"
                 fi
             fi
@@ -2548,7 +2596,7 @@ do_remove() {
     local xdg_shortcuts="/etc/xdg/kglobalshortcutsrc"
 
     local needs_sudo=false
-    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -f /etc/sudoers.d/gloam-sddm-bg || -d /usr/local/lib/gloam ]] && needs_sudo=true
+    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -f /etc/sudoers.d/gloam-sddm-bg || -d /usr/local/lib/gloam || -d /usr/share/wallpapers/gloam-dynamic ]] && needs_sudo=true
 
     if [[ "$needs_sudo" == true ]]; then
         # Warn about global installation
