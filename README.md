@@ -4,176 +4,64 @@
   <img src="screenshots/example.gif" width="800" />
 </div>
 
-**gloam** hooks into KDE's built-in day/night mode to automatically synchronize theme components that otherwise wouldn't get switched, or that you want to override with different options than the global theme provides.
+**gloam** ensures your entire Linux desktop follows KDE Plasma's Day/Night cycle.
 
-It generates custom Plasma Global Themes from your selections so KDE applies most overrides natively, and runs a lightweight background service to handle the rest (Kvantum, GTK, Konsole, Flatpak, and custom scripts).
+While Plasma 6 handles its own themes well, other applications often get left behind. Gloam runs quietly in the background, bridging the gap between Plasma's native theme switching and the rest of your system.
 
-## Features
+## Why use gloam?
 
-- **Custom Theme Generation:** Bundles your overrides into proper Plasma Global Themes for native switching.
-- **Kvantum Integration:** Automatically switches Kvantum themes for application styling.
-- **Plasma Style Sync:** Switches Plasma desktop themes (panel, widgets appearance).
-- **Window Decorations:** Changes window title bar styles for light/dark modes.
-- **Color Scheme Sync:** Switches Plasma color schemes for light/dark modes.
-- **Cursor Theme Sync:** Changes cursor themes for light/dark modes.
-- **Icon Theme Sync:** Changes icon packs for light/dark modes.
-- **GTK Theme Sync:** Updates GTK 3/4 themes to match your Plasma preference.
-- **Flatpak Support:** Automatically applies GTK, Kvantum, and icon themes to Flatpak apps.
-- **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
-- **Splash Screen:** Optionally overrides or disables the splash screen.
-- **Custom Scripts:** Run arbitrary scripts when switching to light or dark mode.
-- **Systemd Service:** User-level systemd service watches for changes automatically.
-- **Panel Widget:** Optional Light/Dark Mode Toggle widget for your panel.
-- **Keyboard Shortcut:** Toggle with Meta+Shift+L (customizable in System Settings > Shortcuts).
-- **Global Installation:** Optionally install system-wide for all users, push config to existing users, and set defaults for new users.
+*   **Total Consistency:** Forces Kvantum, GTK apps, Flatpaks, and Konsole to switch themes instantly alongside Plasma.
+*   **Native Integration:** Works with Plasma's built-in "Night Color" or manual Global Theme switching. No separate scheduler required.
+*   **Custom Global Themes:** Automatically bundles your favorite cursor, icon, and window decoration choices into a proper Plasma Global Theme.
+*   **Scriptable:** Executes your own custom scripts whenever the theme changes (great for switching wallpapers, restart services, etc.).
+*   **Panel Widget:** Includes a handy panel icon to manually toggle light/dark mode with one click.
 
-## Requirements
+## Installation
 
-- **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
-- `inotify-tools`: Required for monitoring configuration changes.
-- `kvantum`: If you want to manage Kvantum themes.
-- `flatpak`: Optional. If installed, GTK/Kvantum themes and icons are automatically applied to Flatpak apps.
-
-### Optional: Seamless Qt App Refresh
-
-By default, some Qt applications may not refresh their styles until restarted. To enable seamless live refreshing of all Qt apps when switching themes, install the [plasma-qt-forcerefresh](https://github.com/edmogeor/plasma-qt-forcerefresh) patch:
-
-```bash
-git clone https://github.com/edmogeor/plasma-qt-forcerefresh.git
-cd plasma-qt-forcerefresh && ./plasma-integration-patch-manager.sh install
-```
-
-This patches `plasma-integration` to add a DBus signal that forces Qt apps to reload their styles without restarting.
-
-### Flatpak Notes
-
-When you configure GTK or Kvantum themes, the script automatically sets up Flatpak permissions to access theme directories. Themes and icons are applied via environment variable overrides (`GTK_THEME`, `GTK_ICON_THEME`, `QT_STYLE_OVERRIDE`).
-
-**Note:** Flatpak apps need to be closed and reopened for theme changes to take effect.
-
-For Kvantum-styled Flatpak Qt apps, you may also need to install the Kvantum runtime:
-
-```bash
-flatpak install org.kde.KStyle.Kvantum
-```
-
-## Installation & Configuration
-
-Clone the repository and run the configuration wizard:
+Clone the repository and run the setup wizard:
 
 ```bash
 git clone https://github.com/edmogeor/gloam.git
 cd gloam && ./gloam.sh configure
 ```
 
-The `configure` command will:
-- Scan your system for available themes (Kvantum, Plasma styles, window decorations, color schemes, cursors, icons, GTK, etc.).
-- Ask you to select which ones to use for **light** and **dark** mode.
-- Detect your current Plasma day/night global themes.
-- Generate custom Plasma Global Themes from your selections.
-- Install the CLI to `~/.local/bin/` (or `/usr/local/bin/` for global installs).
-- Install the Light/Dark Mode Toggle panel widget (optional).
-- Add a keyboard shortcut (Meta+Shift+L) for quick toggling (optional).
-- Create and enable a systemd user service (`gloam.service`).
-
-### Partial Re-configuration
-
-You can re-configure specific components without going through the whole wizard:
-
-```bash
-gloam configure --kvantum      # Kvantum themes
-gloam configure --style        # Plasma styles
-gloam configure --decorations  # Window decorations
-gloam configure --colors       # Color schemes
-gloam configure --cursors      # Cursor themes
-gloam configure --icons        # Icon themes
-gloam configure --gtk          # GTK themes
-gloam configure --konsole      # Konsole profiles
-gloam configure --splash       # Splash screen
-gloam configure --script       # Custom scripts
-gloam configure --widget       # Panel widget
-gloam configure --shortcut     # Keyboard shortcut
-```
+The wizard will scan your installed themes and ask you to pick your preferred **Light** and **Dark** combinations. It then creates a systemd service to watch for changes automatically.
 
 ## Usage
 
-Once configured, the service runs in the background. You usually don't need to touch it. However, you can use the CLI to manually switch modes or check status.
+Once configured, **gloam works automatically**. You don't need to do anything.
 
-### Commands
-
-| Command | Description |
-| :--- | :--- |
-| `gloam configure` | Run the setup wizard. |
-| `gloam status` | Show the service status and current theme configuration. |
-| `gloam light` | Switch to light mode (and sync all sub-themes). |
-| `gloam dark` | Switch to dark mode (and sync all sub-themes). |
-| `gloam toggle` | Toggle between light and dark modes (also via Meta+Shift+L). |
-| `gloam remove` | Stop the service and remove all installed files. |
-| `gloam watch` | Run the monitor in the foreground (used by the service). |
-
-## How It Works
-
-1. During `configure`, gloam generates custom Plasma Global Themes that bundle your selected color scheme, icons, cursors, Plasma style, window decorations, and splash screen.
-2. These custom themes are set as your KDE day/night defaults, so Plasma applies most overrides natively when switching.
-3. A systemd service uses `inotifywait` to monitor `~/.config/kdeglobals` for changes.
-4. When a theme switch is detected, the service applies the remaining overrides that can't be bundled: Kvantum, GTK, Konsole profiles, Flatpak themes, and custom scripts.
-
-## Uninstallation
-
-To remove the service, configuration, and all installed files:
+If you want to manually control it or change settings, use the CLI:
 
 ```bash
-gloam remove
+gloam configure     # Re-run the setup wizard
+gloam toggle        # Switch between Light/Dark mode (or use Meta+Shift+L)
+gloam status        # See what's currently active
+gloam remove        # Uninstall everything
 ```
+
+### Partial Re-configuration
+You can update specific settings without re-running the whole wizard:
+
+```bash
+gloam configure --kvantum      # Change Kvantum themes
+gloam configure --gtk          # Change GTK themes
+gloam configure --script       # Update custom scripts
+gloam configure --widget       # Reinstall panel widget
+```
+
+## Flatpak Support
+Gloam automatically configures permissions for Flatpak apps to read your theme folders.
+*   **Note:** You must restart running Flatpak apps for theme changes to take effect.
+*   If using Kvantum with Flatpaks: `flatpak install org.kde.KStyle.Kvantum`
+
+## Seamless Qt Refresh (Optional)
+Standard Qt apps might not refresh instantly without a restart. For a smoother experience, you can install the [plasma-qt-forcerefresh](https://github.com/edmogeor/plasma-qt-forcerefresh) patch.
 
 ## Day/Night Wallpapers
+Gloam leaves wallpaper management to Plasma 6, which supports this natively.
 
-**Note:** gloam does not manage wallpapers, as KDE Plasma 6 handles day/night wallpaper switching natively through dynamic wallpapers.
-
-To set up automatic day/night wallpaper switching:
-
-1. **Create a wallpaper folder** in `~/.local/share/wallpapers/` with the following structure (Replace `WALLPAPER_NAME` with the name you want):
-
-```
-~/.local/share/wallpapers/WALLPAPER_NAME/
-├── metadata.json
-└── contents/
-    ├── images/          # Day wallpapers
-    │   ├── 1440x2960.png
-    │   ├── 5120x2880.png
-    │   └── 7680x2160.png
-    └── images_dark/     # Night wallpapers
-        ├── 1440x2960.png
-        ├── 5120x2880.png
-        └── 7680x2160.png
-```
-
-2. **Create the `metadata.json` file** (Make sure the Id field is one word with no spaces):
-
-```json
-{
-    "KPlugin": {
-        "Authors": [
-            {
-            }
-        ],
-        "Id": "WALLPAPER_NAME",
-        "License": "CC-BY-SA-4.0",
-        "Name": "WALLPAPER_NAME"
-    }
-}
-```
-
-3. **Add your wallpaper images:**
-   - Place day wallpapers in `contents/images/`
-   - Place night wallpapers in `contents/images_dark/`
-   - Name each file by its resolution (e.g., `1440x2960.png`)
-   - KDE will automatically select the appropriate resolution for each display
-
-4. **Select the wallpaper:**
-   - Open System Settings > Wallpaper
-   - Your new wallpaper should appear in the list
-   - Select it to enable automatic day/night switching
-   - Ensure **Switch dynamic wallpapers:** is set to **Based on whether Plasma style is light or dark**
-
-KDE will automatically switch between day and night wallpapers based on your day/night mode settings.
+To use it:
+1.  Go to **System Settings > Wallpaper**.
+2.  Choose a "Dynamic" wallpaper (often marked with a clock icon).
+3.  Set "Switch dynamic wallpapers" to **"Based on whether Plasma style is light or dark"**.
