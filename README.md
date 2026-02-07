@@ -116,6 +116,16 @@ gloam configure --widget       # Panel widget
 gloam configure --shortcut     # Keyboard shortcut
 ```
 
+### Config Import
+
+If you already have a working `gloam.conf` (e.g. from another machine or user), you can import it to skip the interactive setup wizard:
+
+```bash
+gloam configure --import /path/to/gloam.conf
+```
+
+This sources the config file and proceeds directly to custom theme generation, CLI installation, and service setup.
+
 ## Usage
 
 Once configured, the service runs in the background. You usually don't need to touch it. However, you can use the CLI to manually switch modes or check status.
