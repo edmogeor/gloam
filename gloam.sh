@@ -962,12 +962,13 @@ X-KDE-GlobalAccel-CommandShortcut=true"
 remove_shortcut() {
     local local_file="${HOME}/.local/share/applications/gloam-toggle.desktop"
     local global_file="/usr/share/applications/gloam-toggle.desktop"
+    local had_shortcut=false
 
-    [[ -f "$local_file" ]] && rm -f "$local_file" && echo "Removed $local_file"
-    [[ -f "$global_file" ]] && sudo rm -f "$global_file" && echo "Removed $global_file"
+    [[ -f "$local_file" ]] && rm -f "$local_file" && echo "Removed $local_file" && had_shortcut=true
+    [[ -f "$global_file" ]] && sudo rm -f "$global_file" && echo "Removed $global_file" && had_shortcut=true
 
-    # Remove from kglobalshortcutsrc (per-user)
-    if grep -q "$SHORTCUT_ID" "${HOME}/.config/kglobalshortcutsrc" 2>/dev/null; then
+    # Remove from kglobalshortcutsrc (per-user) only if we actually had the shortcut installed
+    if [[ "$had_shortcut" == true ]] && grep -q "$SHORTCUT_ID" "${HOME}/.config/kglobalshortcutsrc" 2>/dev/null; then
         kwriteconfig6 --file kglobalshortcutsrc --group "services" --group "$SHORTCUT_ID" --key "_launch" --delete
         echo "Removed keyboard shortcut binding"
     fi
@@ -3720,8 +3721,9 @@ do_remove() {
         echo "Removed system keyboard shortcut"
     fi
 
-    # Reset Flatpak overrides
-    if command -v flatpak &>/dev/null; then
+    # Reset Flatpak overrides (only if gloam set them)
+    local flatpak_overrides="${HOME}/.local/share/flatpak/overrides/global"
+    if command -v flatpak &>/dev/null && [[ -f "$flatpak_overrides" ]] && grep -q "GTK_THEME" "$flatpak_overrides" 2>/dev/null; then
         flatpak override --user --unset-env=GTK_THEME 2>/dev/null || true
         flatpak override --user --unset-env=GTK_ICON_THEME 2>/dev/null || true
         flatpak override --user --unset-env=QT_STYLE_OVERRIDE 2>/dev/null || true
