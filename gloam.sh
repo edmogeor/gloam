@@ -382,8 +382,8 @@ push_config_to_users() {
         fi
 
         # Enable service for user (will take effect on their next login)
-        sudo -u "$username" systemctl --user daemon-reload 2>/dev/null || warn "Failed to daemon-reload for user: $username"
-        sudo -u "$username" systemctl --user enable "$SERVICE_NAME" 2>/dev/null || warn "Failed to enable service for user: $username"
+        sudo -u "$username" systemctl --user daemon-reload 2>/dev/null || log "WARN: Failed to daemon-reload for user: $username (not logged in?)"
+        sudo -u "$username" systemctl --user enable "$SERVICE_NAME" 2>/dev/null || log "WARN: Failed to enable service for user: $username (not logged in?)"
 
         echo -e "    ${GREEN}Done${RESET}"
     done
@@ -1635,7 +1635,7 @@ METADATA
                 fi
             done
             [[ "$THEME_INSTALL_GLOBAL" == true && "$icon_src" != /usr/share/icons/* ]] && \
-                "$PLASMA_CHANGEICONS" "$icon_theme" >/dev/null 2>&1 || warn "Failed to re-apply icon theme: $icon_theme"
+                "$PLASMA_CHANGEICONS" "$icon_theme" >/dev/null 2>&1 || log "WARN: Failed to re-apply icon theme: $icon_theme"
         fi
     fi
 
@@ -1690,7 +1690,7 @@ METADATA
                 fi
             done
             [[ "$THEME_INSTALL_GLOBAL" == true && "$cursor_src" != /usr/share/icons/* ]] && \
-                plasma-apply-cursortheme "$cursor_theme" >/dev/null 2>&1 || warn "Failed to re-apply cursor theme: $cursor_theme"
+                plasma-apply-cursortheme "$cursor_theme" >/dev/null 2>&1 || log "WARN: Failed to re-apply cursor theme: $cursor_theme"
         fi
     fi
 
