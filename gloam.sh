@@ -1509,6 +1509,8 @@ METADATA
         if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
             sudo awk -v section="$section" -v key="$key" -v value="$value" "$awk_script" "$defaults_file" > "$tmpfile"
             sudo mv "$tmpfile" "$defaults_file"
+            sudo chmod 644 "$defaults_file"
+            sudo chown root:root "$defaults_file"
         else
             awk -v section="$section" -v key="$key" -v value="$value" "$awk_script" "$defaults_file" > "$tmpfile"
             mv "$tmpfile" "$defaults_file"
