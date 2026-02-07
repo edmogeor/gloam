@@ -1356,67 +1356,116 @@ METADATA
         fi
     fi
 
-    # Bundle icon theme into theme directory
+    # Bundle icon theme (and any sibling themes it symlinks to) into theme directory
     if [[ -n "$icon_theme" ]]; then
-        local icon_src=""
+        local icon_src="" icon_src_dir=""
         for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
             if [[ -d "${dir}/${icon_theme}" ]]; then
                 icon_src="${dir}/${icon_theme}"
+                icon_src_dir="$dir"
                 break
             fi
         done
         if [[ -n "$icon_src" ]]; then
-            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
-                sudo mkdir -p "${theme_dir}/contents/icons"
-                sudo cp -r "$icon_src" "${theme_dir}/contents/icons/${icon_theme}"
-            else
-                mkdir -p "${theme_dir}/contents/icons"
-                cp -r "$icon_src" "${theme_dir}/contents/icons/${icon_theme}"
-            fi
-            # Global install: ensure icons are in /usr/share/icons for system-wide access
-            if [[ "$THEME_INSTALL_GLOBAL" == true && "$icon_src" != /usr/share/icons/* ]]; then
-                sudo cp -r "$icon_src" "/usr/share/icons/${icon_theme}"
-                rm -rf "$icon_src"
-                # Record original location for restore on uninstall
-                if [[ "$mode" == "light" ]]; then
-                    ICON_LIGHT_MOVED_FROM="$(dirname "$icon_src")"
+            # Collect the theme and any sibling themes it symlinks to (e.g. WhiteSur-light -> ../WhiteSur/)
+            local icon_themes_to_bundle=("$icon_theme")
+            local link_target
+            while IFS= read -r link_target; do
+                # Resolve relative symlink targets like ../WhiteSur/actions to extract theme name
+                local dep_name
+                dep_name=$(echo "$link_target" | sed -n 's|^\.\./\([^/]*\)/.*|\1|p')
+                [[ -z "$dep_name" ]] && continue
+                # Skip if already in the list or same as main theme
+                local already=false
+                for existing in "${icon_themes_to_bundle[@]}"; do
+                    [[ "$existing" == "$dep_name" ]] && already=true && break
+                done
+                [[ "$already" == true ]] && continue
+                # Only add if the dependency exists in the same parent directory
+                [[ -d "${icon_src_dir}/${dep_name}" ]] && icon_themes_to_bundle+=("$dep_name")
+            done < <(find -L "$icon_src" -maxdepth 1 -type l -printf '%l\n' 2>/dev/null || find "$icon_src" -maxdepth 1 -type l -exec readlink {} \; 2>/dev/null)
+
+            for icon_name in "${icon_themes_to_bundle[@]}"; do
+                local src_path="${icon_src_dir}/${icon_name}"
+                [[ -d "$src_path" ]] || continue
+                if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                    sudo mkdir -p "${theme_dir}/contents/icons"
+                    sudo cp -r "$src_path" "${theme_dir}/contents/icons/${icon_name}"
                 else
-                    ICON_DARK_MOVED_FROM="$(dirname "$icon_src")"
+                    mkdir -p "${theme_dir}/contents/icons"
+                    cp -r "$src_path" "${theme_dir}/contents/icons/${icon_name}"
                 fi
+                # Global install: ensure icons are in /usr/share/icons for system-wide access
+                if [[ "$THEME_INSTALL_GLOBAL" == true && "$src_path" != /usr/share/icons/* ]]; then
+                    sudo cp -r "$src_path" "/usr/share/icons/${icon_name}"
+                    rm -rf "$src_path"
+                    # Record original location for restore on uninstall (main theme only)
+                    if [[ "$icon_name" == "$icon_theme" ]]; then
+                        if [[ "$mode" == "light" ]]; then
+                            ICON_LIGHT_MOVED_FROM="$(dirname "$src_path")"
+                        else
+                            ICON_DARK_MOVED_FROM="$(dirname "$src_path")"
+                        fi
+                    fi
+                fi
+            done
+            [[ "$THEME_INSTALL_GLOBAL" == true && "$icon_src" != /usr/share/icons/* ]] && \
                 "$PLASMA_CHANGEICONS" "$icon_theme" >/dev/null 2>&1 || true
-            fi
         fi
     fi
 
-    # Bundle cursor theme into theme directory
+    # Bundle cursor theme (and any sibling themes it symlinks to) into theme directory
     if [[ -n "$cursor_theme" ]]; then
-        local cursor_src=""
+        local cursor_src="" cursor_src_dir=""
         for dir in /usr/share/icons "${HOME}/.local/share/icons" "${HOME}/.icons"; do
             if [[ -d "${dir}/${cursor_theme}/cursors" ]]; then
                 cursor_src="${dir}/${cursor_theme}"
+                cursor_src_dir="$dir"
                 break
             fi
         done
         if [[ -n "$cursor_src" ]]; then
-            if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
-                sudo mkdir -p "${theme_dir}/contents/cursors"
-                sudo cp -r "$cursor_src" "${theme_dir}/contents/cursors/${cursor_theme}"
-            else
-                mkdir -p "${theme_dir}/contents/cursors"
-                cp -r "$cursor_src" "${theme_dir}/contents/cursors/${cursor_theme}"
-            fi
-            # Global install: ensure cursors are in /usr/share/icons for system-wide access
-            if [[ "$THEME_INSTALL_GLOBAL" == true && "$cursor_src" != /usr/share/icons/* ]]; then
-                sudo cp -r "$cursor_src" "/usr/share/icons/${cursor_theme}"
-                rm -rf "$cursor_src"
-                # Record original location for restore on uninstall
-                if [[ "$mode" == "light" ]]; then
-                    CURSOR_LIGHT_MOVED_FROM="$(dirname "$cursor_src")"
+            # Collect the theme and any sibling themes it symlinks to
+            local cursor_themes_to_bundle=("$cursor_theme")
+            local link_target
+            while IFS= read -r link_target; do
+                local dep_name
+                dep_name=$(echo "$link_target" | sed -n 's|^\.\./\([^/]*\)/.*|\1|p')
+                [[ -z "$dep_name" ]] && continue
+                local already=false
+                for existing in "${cursor_themes_to_bundle[@]}"; do
+                    [[ "$existing" == "$dep_name" ]] && already=true && break
+                done
+                [[ "$already" == true ]] && continue
+                [[ -d "${cursor_src_dir}/${dep_name}" ]] && cursor_themes_to_bundle+=("$dep_name")
+            done < <(find -L "$cursor_src" -maxdepth 1 -type l -printf '%l\n' 2>/dev/null || find "$cursor_src" -maxdepth 1 -type l -exec readlink {} \; 2>/dev/null)
+
+            for cursor_name in "${cursor_themes_to_bundle[@]}"; do
+                local src_path="${cursor_src_dir}/${cursor_name}"
+                [[ -d "$src_path" ]] || continue
+                if [[ "$THEME_INSTALL_GLOBAL" == true ]]; then
+                    sudo mkdir -p "${theme_dir}/contents/cursors"
+                    sudo cp -r "$src_path" "${theme_dir}/contents/cursors/${cursor_name}"
                 else
-                    CURSOR_DARK_MOVED_FROM="$(dirname "$cursor_src")"
+                    mkdir -p "${theme_dir}/contents/cursors"
+                    cp -r "$src_path" "${theme_dir}/contents/cursors/${cursor_name}"
                 fi
+                # Global install: ensure cursors are in /usr/share/icons for system-wide access
+                if [[ "$THEME_INSTALL_GLOBAL" == true && "$src_path" != /usr/share/icons/* ]]; then
+                    sudo cp -r "$src_path" "/usr/share/icons/${cursor_name}"
+                    rm -rf "$src_path"
+                    # Record original location for restore on uninstall (main theme only)
+                    if [[ "$cursor_name" == "$cursor_theme" ]]; then
+                        if [[ "$mode" == "light" ]]; then
+                            CURSOR_LIGHT_MOVED_FROM="$(dirname "$src_path")"
+                        else
+                            CURSOR_DARK_MOVED_FROM="$(dirname "$src_path")"
+                        fi
+                    fi
+                fi
+            done
+            [[ "$THEME_INSTALL_GLOBAL" == true && "$cursor_src" != /usr/share/icons/* ]] && \
                 plasma-apply-cursortheme "$cursor_theme" >/dev/null 2>&1 || true
-            fi
         fi
     fi
 
@@ -3017,6 +3066,8 @@ do_remove() {
         source "$CONFIG_FILE"
         local _moved_theme _moved_from _global_path
         for _var_prefix in ICON CURSOR; do
+            local _asset_subdir
+            [[ "$_var_prefix" == "ICON" ]] && _asset_subdir="icons" || _asset_subdir="cursors"
             for _mode_suffix in LIGHT DARK; do
                 _moved_from="${_var_prefix}_${_mode_suffix}_MOVED_FROM"
                 _moved_from="${!_moved_from:-}"
@@ -3026,18 +3077,40 @@ do_remove() {
                 _moved_theme="${!_theme_var:-}"
                 [[ -z "$_moved_theme" ]] && continue
 
-                _global_path="/usr/share/icons/${_moved_theme}"
-                [[ -d "$_global_path" ]] || continue
+                # Restore main theme and any dependency themes from the bundle
+                local _bundle_dir
+                local _mode_lc="${_mode_suffix,,}"
+                for _theme_install in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
+                    _bundle_dir="${_theme_install}/org.kde.custom.${_mode_lc}/contents/${_asset_subdir}"
+                    [[ -d "$_bundle_dir" ]] && break || _bundle_dir=""
+                done
 
-                # Only restore if the original location doesn't already have it
-                if [[ ! -d "${_moved_from}/${_moved_theme}" ]]; then
-                    mkdir -p "$_moved_from"
-                    sudo cp -r "$_global_path" "${_moved_from}/${_moved_theme}"
-                    chown -R "$(id -u):$(id -g)" "${_moved_from}/${_moved_theme}"
-                    echo "Restored ${_moved_theme} to ${_moved_from}/"
+                # Collect all theme names to restore (main + dependencies from bundle)
+                local _themes_to_restore=("$_moved_theme")
+                if [[ -n "$_bundle_dir" ]]; then
+                    for _bundled in "$_bundle_dir"/*/; do
+                        [[ -d "$_bundled" ]] || continue
+                        local _bname
+                        _bname="$(basename "$_bundled")"
+                        [[ "$_bname" == "$_moved_theme" ]] && continue
+                        _themes_to_restore+=("$_bname")
+                    done
                 fi
-                sudo rm -rf "$_global_path"
-                echo "Removed $_global_path"
+
+                for _restore_name in "${_themes_to_restore[@]}"; do
+                    _global_path="/usr/share/icons/${_restore_name}"
+                    [[ -d "$_global_path" ]] || continue
+
+                    # Only restore if the original location doesn't already have it
+                    if [[ ! -d "${_moved_from}/${_restore_name}" ]]; then
+                        mkdir -p "$_moved_from"
+                        sudo cp -r "$_global_path" "${_moved_from}/${_restore_name}"
+                        chown -R "$(id -u):$(id -g)" "${_moved_from}/${_restore_name}"
+                        echo "Restored ${_restore_name} to ${_moved_from}/"
+                    fi
+                    sudo rm -rf "$_global_path"
+                    echo "Removed $_global_path"
+                done
             done
         done
     fi
