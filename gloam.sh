@@ -1750,10 +1750,37 @@ bundle_wallpapers_and_sddm() {
     fi
 
     # Bundle SDDM backgrounds into each theme dir
+    # Create SDDM images from wallpaper packs if they don't already exist
     local theme_dir_dark="${THEME_INSTALL_DIR}/org.kde.custom.dark"
+    local sddm_wp_base="${WALLPAPER_BASE:-}"
+    [[ -z "$sddm_wp_base" ]] && sddm_wp_base="${wp_src:-}"
     for variant in light dark; do
         local sddm_bg
         sddm_bg=$({ compgen -G "/usr/local/lib/gloam/sddm-bg-${variant}.*" 2>/dev/null || true; } | head -1)
+
+        # If SDDM image doesn't exist, create it from the wallpaper pack
+        if [[ -z "$sddm_bg" || ! -f "$sddm_bg" ]] && [[ -n "$sddm_wp_base" ]]; then
+            local best_img="" best_px=0
+            for img in "${sddm_wp_base}/gloam-${variant}/contents/images/"*; do
+                [[ -f "$img" ]] || continue
+                local dims
+                dims=$(get_image_dimensions "$img")
+                [[ -z "$dims" ]] && continue
+                local w h
+                w="${dims%x*}"; h="${dims#*x}"
+                if (( w * h > best_px )); then
+                    best_px=$(( w * h ))
+                    best_img="$img"
+                fi
+            done
+            if [[ -n "$best_img" ]]; then
+                local ext="${best_img##*.}"
+                sudo mkdir -p /usr/local/lib/gloam
+                sudo cp "$best_img" "/usr/local/lib/gloam/sddm-bg-${variant}.${ext,,}"
+                sddm_bg="/usr/local/lib/gloam/sddm-bg-${variant}.${ext,,}"
+            fi
+        fi
+
         [[ -n "$sddm_bg" && -f "$sddm_bg" ]] || continue
 
         local target_theme_dir
@@ -2989,6 +3016,17 @@ do_configure() {
             apply_lockscreen_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
         fi
 
+        # Apply SDDM wallpaper for current mode
+        if [[ -x /usr/local/lib/gloam/set-sddm-background ]]; then
+            local regen_sddm_variant="light"
+            if [[ "$current_laf" == "$CUSTOM_THEME_DARK" || "$current_laf" == "$BASE_THEME_DARK" ]]; then
+                regen_sddm_variant="dark"
+            fi
+            local regen_sddm_bg
+            regen_sddm_bg=$({ compgen -G "/usr/local/lib/gloam/sddm-bg-${regen_sddm_variant}.*" || true; } | head -1)
+            [[ -n "$regen_sddm_bg" ]] && apply_sddm_wallpaper "$regen_sddm_bg"
+        fi
+
         echo -e "${GREEN}Custom themes updated.${RESET}"
 
     elif has_bundleable_options; then
@@ -3037,6 +3075,17 @@ do_configure() {
                     local wp_mode="gloam-dynamic"
                     apply_desktop_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
                     apply_lockscreen_wallpaper "${WALLPAPER_BASE}/${wp_mode}"
+                fi
+
+                # Apply SDDM wallpaper for current mode
+                if [[ -x /usr/local/lib/gloam/set-sddm-background ]]; then
+                    local first_sddm_variant="light"
+                    if [[ "$current_laf" == "$BASE_THEME_DARK" ]]; then
+                        first_sddm_variant="dark"
+                    fi
+                    local first_sddm_bg
+                    first_sddm_bg=$({ compgen -G "/usr/local/lib/gloam/sddm-bg-${first_sddm_variant}.*" || true; } | head -1)
+                    [[ -n "$first_sddm_bg" ]] && apply_sddm_wallpaper "$first_sddm_bg"
                 fi
 
                 echo -e "${GREEN}Custom themes installed and set as defaults.${RESET}"
