@@ -169,7 +169,7 @@ ask_global_install() {
             echo "  - Window manager effects and tiling"
             echo "  - Keyboard shortcuts"
             echo "  - Desktop and lock screen wallpapers"
-            echo "  - App settings (Dolphin, Konsole, KRunner)"
+            echo "  - App settings (Dolphin, Konsole profiles, KRunner)"
             echo ""
             read -rp "Copy desktop settings? [y/N]: " desktop_choice
             [[ "$desktop_choice" =~ ^[Yy]$ ]] && COPY_DESKTOP_LAYOUT=true
@@ -209,6 +209,35 @@ ask_system_defaults() {
 
     read -rp "Set system defaults for new users? [y/N]: " choice
     [[ "$choice" =~ ^[Yy]$ ]] && SET_SYSTEM_DEFAULTS=true
+}
+
+install_icons_system_wide() {
+    # Install configured icon/cursor themes to /usr/share/icons/ if only available locally
+    local theme_names=("${ICON_LIGHT:-}" "${ICON_DARK:-}" "${CURSOR_LIGHT:-}" "${CURSOR_DARK:-}")
+    for theme_name in "${theme_names[@]}"; do
+        [[ -z "$theme_name" ]] && continue
+        [[ -d "/usr/share/icons/${theme_name}" ]] && continue
+        # Find theme in local dirs
+        local src=""
+        for dir in "${HOME}/.local/share/icons" "${HOME}/.icons"; do
+            if [[ -d "${dir}/${theme_name}" ]]; then
+                src="${dir}/${theme_name}"
+                break
+            fi
+        done
+        [[ -z "$src" ]] && continue
+        sudo cp -r "$src" "/usr/share/icons/${theme_name}"
+        # Also install any sibling themes referenced by symlinks (e.g. WhiteSur base for WhiteSur-light)
+        local link_target
+        while IFS= read -r link_target; do
+            local dep_name
+            dep_name=$(echo "$link_target" | sed -n 's|^\.\./\([^/]*\)/.*|\1|p')
+            [[ -z "$dep_name" ]] && continue
+            [[ -d "/usr/share/icons/${dep_name}" ]] && continue
+            local dep_src="$(dirname "$src")/${dep_name}"
+            [[ -d "$dep_src" ]] && sudo cp -r "$dep_src" "/usr/share/icons/${dep_name}"
+        done < <(find -L "$src" -maxdepth 1 -type l -printf '%l\n' 2>/dev/null || find "$src" -maxdepth 1 -type l -exec readlink {} \; 2>/dev/null)
+    done
 }
 
 push_config_to_users() {
@@ -288,6 +317,14 @@ push_config_to_users() {
                     --key Image "file:///usr/share/wallpapers/gloam-dynamic" 2>/dev/null || true
             fi
 
+            # Konsole profiles (color schemes and profiles)
+            local konsole_dir="${HOME}/.local/share/konsole"
+            if [[ -d "$konsole_dir" ]] && [[ -n "$(ls -A "$konsole_dir" 2>/dev/null)" ]]; then
+                sudo mkdir -p "${homedir}/.local/share/konsole"
+                sudo cp -r "$konsole_dir"/* "${homedir}/.local/share/konsole/"
+                sudo chown -R "$username:" "${homedir}/.local/share/konsole"
+            fi
+
             # Custom plasmoids so panel widgets work
             local plasmoids_dir="${HOME}/.local/share/plasma/plasmoids"
             if [[ -d "$plasmoids_dir" ]] && [[ -n "$(ls -A "$plasmoids_dir" 2>/dev/null)" ]]; then
@@ -340,6 +377,9 @@ push_config_to_users() {
             fi
         done
     fi
+
+    # Fallback: install icon/cursor themes directly from local dirs (no custom theme)
+    install_icons_system_wide
 
     # Install SDDM backgrounds from theme dir to system location
     for variant in light dark; do
@@ -410,6 +450,13 @@ set_system_defaults() {
                 --key Image "file:///usr/share/wallpapers/gloam-dynamic"
         fi
 
+        # Konsole profiles (color schemes and profiles)
+        local konsole_dir="${HOME}/.local/share/konsole"
+        if [[ -d "$konsole_dir" ]] && [[ -n "$(ls -A "$konsole_dir" 2>/dev/null)" ]]; then
+            sudo mkdir -p /etc/skel/.local/share/konsole
+            sudo cp -r "$konsole_dir"/* /etc/skel/.local/share/konsole/
+        fi
+
         # Custom plasmoids so panel widgets work
         local plasmoids_dir="${HOME}/.local/share/plasma/plasmoids"
         if [[ -d "$plasmoids_dir" ]] && [[ -n "$(ls -A "$plasmoids_dir" 2>/dev/null)" ]]; then
@@ -452,6 +499,9 @@ set_system_defaults() {
             fi
         done
     fi
+
+    # Fallback: install icon/cursor themes directly from local dirs (no custom theme)
+    install_icons_system_wide
 
     # Set keyboard shortcut in /etc/xdg/kglobalshortcutsrc
     sudo kwriteconfig6 --file /etc/xdg/kglobalshortcutsrc --group "services" --group "$SHORTCUT_ID" --key "_launch" "Meta+Shift+L"
@@ -1987,17 +2037,15 @@ do_configure() {
     check_desktop_environment
     check_dependencies
 
-    # Show disclaimer on first run
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        echo ""
-        echo -e "${YELLOW}${BOLD}Disclaimer${RESET}"
-        echo "gloam modifies Plasma theme settings, system configs, and user files."
-        echo "It is recommended to back up your system before proceeding."
-        echo "The authors are not responsible for any system issues."
-        echo ""
-        read -rp "Continue? [y/N]: " disclaimer_choice
-        [[ ! "$disclaimer_choice" =~ ^[Yy]$ ]] && { echo "Aborted."; exit 0; }
-    fi
+    # Show disclaimer
+    echo ""
+    echo -e "${YELLOW}${BOLD}Disclaimer${RESET}"
+    echo "gloam modifies Plasma theme settings, system configs, and user files."
+    echo "It is recommended to back up your system before proceeding."
+    echo "The authors are not responsible for any system issues."
+    echo ""
+    read -rp "Continue? [y/N]: " disclaimer_choice
+    [[ ! "$disclaimer_choice" =~ ^[Yy]$ ]] && { echo "Aborted."; exit 0; }
 
     # Parse modifiers first to know if this is a full or partial configure
     shift # Remove 'configure' from args
@@ -3282,6 +3330,7 @@ do_remove() {
         [[ -f "/etc/skel/.config/${cfg}" ]] && sudo rm "/etc/skel/.config/${cfg}" && echo "Removed /etc/skel/.config/${cfg}" || true
     done
     [[ -d /etc/skel/.local/share/plasma/plasmoids ]] && sudo rm -rf /etc/skel/.local/share/plasma/plasmoids && echo "Removed /etc/skel/.local/share/plasma/plasmoids" || true
+    [[ -d /etc/skel/.local/share/konsole ]] && sudo rm -rf /etc/skel/.local/share/konsole && echo "Removed /etc/skel/.local/share/konsole" || true
 
     # Remove keyboard shortcut from /etc/xdg/kglobalshortcutsrc
     if [[ -f "$xdg_shortcuts" ]] && grep -q "$SHORTCUT_ID" "$xdg_shortcuts" 2>/dev/null; then
