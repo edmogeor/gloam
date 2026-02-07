@@ -2245,14 +2245,14 @@ do_configure() {
             fi
         done
 
-        # Kvantum themes
+        # Kvantum themes (theme name comes from .kvconfig filename, not parent dir)
         for _label_kv in "KVANTUM_LIGHT:Light Kvantum theme" "KVANTUM_DARK:Dark Kvantum theme"; do
             local _var="${_label_kv%%:*}" _desc="${_label_kv#*:}"
             local _val="${!_var:-}"
             if [[ -n "$_val" ]]; then
                 local _found=false
                 for dir in /usr/share/Kvantum "${HOME}/.config/Kvantum"; do
-                    [[ -d "${dir}/${_val}" ]] && _found=true && break
+                    compgen -G "${dir}/*/${_val}.kvconfig" > /dev/null 2>&1 && _found=true && break
                 done
                 [[ "$_found" == false ]] && import_errors+=("${_desc} not installed: $_val")
             fi
