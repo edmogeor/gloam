@@ -2151,6 +2151,7 @@ do_configure() {
     local configure_appstyle=false
     local configure_wallpaper=false
     local IMPORT_CONFIG=""
+    local EXPORT_DIR=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -2170,15 +2171,31 @@ do_configure() {
             -w|--widget)        configure_widget=true; configure_all=false ;;
             -K|--shortcut)      configure_shortcut=true; configure_all=false ;;
             -I|--import)        shift; IMPORT_CONFIG="$1" ;;
+            -e|--export)        shift; EXPORT_DIR="$1" ;;
             help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 echo "Unknown option: $1" >&2
-                echo "Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut -I|--import <file>" >&2
+                echo "Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut -I|--import <file> -e|--export <dir>" >&2
                 exit 1
                 ;;
         esac
         shift
     done
+
+    # Handle --export: copy config to target directory and exit
+    if [[ -n "${EXPORT_DIR}" ]]; then
+        if [[ ! -f "$CONFIG_FILE" ]]; then
+            echo -e "${RED}Error: No config found at $CONFIG_FILE. Run configure first.${RESET}"
+            exit 1
+        fi
+        if [[ ! -d "$EXPORT_DIR" ]]; then
+            echo -e "${RED}Error: Directory not found: $EXPORT_DIR${RESET}"
+            exit 1
+        fi
+        cp "$CONFIG_FILE" "${EXPORT_DIR}/gloam.conf"
+        echo -e "${GREEN}Config exported to ${EXPORT_DIR}/gloam.conf${RESET}"
+        exit 0
+    fi
 
     # Show disclaimer
     echo ""
@@ -4002,6 +4019,7 @@ Options:
   -w, --widget        Install/reinstall panel widget
   -K, --shortcut      Install/reinstall keyboard shortcut (Meta+Shift+L)
   -I, --import <file>  Import an existing gloam.conf and skip interactive setup
+  -e, --export <dir>   Export current gloam.conf to a directory (for use with --import)
 
 Panel Widget:
   During configuration, if you install the command globally (~/.local/bin),
@@ -4012,6 +4030,8 @@ Examples:
   $0 configure              Configure all theme options
   $0 configure -k -i        Configure only Kvantum and icon themes
   $0 configure --splash     Configure only splash screens
+  $0 configure --export /path/to/dir
+                            Export config for use on another machine/user
   $0 configure --import /path/to/gloam.conf
                             Import config from another machine/user
 EOF
