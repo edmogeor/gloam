@@ -99,7 +99,8 @@ SHORTCUT_ID="gloam-toggle.desktop"
 # Delays (seconds) for KDE to finish writing configs after LookAndFeel apply
 DELAY_LAF_SETTLE=0.5
 DELAY_LAF_PROPAGATE=1
-DELAY_PLASMA_INIT=0.8
+DELAY_PLASMA_POLL=0.25
+PLASMA_POLL_MAX=120
 
 # Run a command with sudo if global install mode, otherwise run directly
 gloam_cmd() {
@@ -1879,7 +1880,17 @@ do_watch() {
     log "Watcher started"
 
     # Wait for Plasma to fully initialize before applying theme
-    sleep "$DELAY_PLASMA_INIT"
+    local wait_count=0
+    while ! dbus-send --session --dest=org.freedesktop.DBus --print-reply \
+        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
+        string:"org.kde.plasmashell" 2>/dev/null | grep -q "boolean true"; do
+        if (( wait_count >= PLASMA_POLL_MAX )); then
+            log "Plasma shell not detected after $(( PLASMA_POLL_MAX / 4 ))s, proceeding anyway"
+            break
+        fi
+        sleep "$DELAY_PLASMA_POLL"
+        (( wait_count++ ))
+    done
 
     PREV_LAF=$(get_laf)
     log "Initial theme: $PREV_LAF"
