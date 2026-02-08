@@ -176,6 +176,7 @@ Once configured, the service runs in the background. You usually don't need to t
 To remove the service, configuration, and all installed files:
 
 ```bash
-gloam remove
+gloam remove        # if installed globally
+./gloam.sh remove   # if running from source
 ```
 
