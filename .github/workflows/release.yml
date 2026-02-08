@@ -37,16 +37,9 @@ jobs:
           git push origin HEAD:main
 
       - name: Extract changelog for this version
-        id: changelog
         run: |
           version="${{ steps.version.outputs.version }}"
-          # Extract the section between this version's heading and the next heading (or EOF)
-          changelog=$(awk "/^## \\[${version}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md)
-          {
-            echo "body<<CHANGELOG_EOF"
-            echo "$changelog"
-            echo "CHANGELOG_EOF"
-          } >> "$GITHUB_OUTPUT"
+          awk "/^## \\[${version}\\]/{found=1; next} /^## \\[/{if(found) exit} found" CHANGELOG.md > /tmp/release-notes.md
 
       - name: Create GitHub release
         env:
@@ -54,4 +47,4 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             --title "$GITHUB_REF_NAME" \
-            --notes "${{ steps.changelog.outputs.body }}"
+            --notes-file /tmp/release-notes.md

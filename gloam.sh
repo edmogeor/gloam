@@ -235,6 +235,18 @@ check_for_updates() {
 }
 
 do_update() {
+    if [[ ! -f "/usr/local/bin/gloam" ]]; then
+        echo -e "${YELLOW}gloam is not installed globally.${RESET}"
+        read -rp "Would you like to install globally? [y/N]: " choice
+        if [[ "$choice" =~ ^[Yy]$ ]]; then
+            INSTALL_GLOBAL=true
+        else
+            echo "Run 'gloam configure' to update a local installation."
+            return 0
+        fi
+    else
+        INSTALL_GLOBAL=true
+    fi
     check_for_updates "verbose"
 }
 
