@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.2] - 2026-02-08
+
+### Fixed
+- Self-update no longer corrupts the running script (use atomic mv instead of in-place cp)
+
 ## [1.0.1] - 2026-02-08
 
 ### Added

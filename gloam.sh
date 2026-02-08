@@ -21,7 +21,7 @@ BLUE='\033[0;34m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.0.1"
+GLOAM_VERSION="1.0.2"
 GLOAM_REPO="edmogeor/gloam"
 
 # Global installation mode flags
@@ -229,11 +229,14 @@ check_for_updates() {
         return 1
     fi
 
-    # Update the CLI binary
-    local cli_path
+    # Update the CLI binary (mv to new inode so the running script is not corrupted)
+    local cli_path cli_dir tmp_cli
     cli_path="$(get_cli_path)"
-    gloam_cmd cp "$tmp_dir/gloam.sh" "$cli_path"
-    gloam_cmd chmod +x "$cli_path"
+    cli_dir="$(dirname "$cli_path")"
+    tmp_cli=$(gloam_cmd mktemp "${cli_dir}/gloam.XXXXXX")
+    gloam_cmd cp "$tmp_dir/gloam.sh" "$tmp_cli"
+    gloam_cmd chmod +x "$tmp_cli"
+    gloam_cmd mv "$tmp_cli" "$cli_path"
 
     # Update the plasmoid if already installed
     if [[ -d "$tmp_dir/plasmoid" ]]; then
