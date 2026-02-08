@@ -97,8 +97,8 @@ PLASMOID_ID="org.kde.plasma.lightdarktoggle"
 SHORTCUT_ID="gloam-toggle.desktop"
 
 # Delays (seconds) for KDE to finish writing configs after LookAndFeel apply
-DELAY_LAF_SETTLE=0.4
-DELAY_LAF_PROPAGATE=1.2
+DELAY_LAF_SETTLE=0.5
+DELAY_LAF_PROPAGATE=1
 DELAY_PLASMA_INIT=0.8
 
 # Run a command with sudo if global install mode, otherwise run directly
