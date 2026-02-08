@@ -27,13 +27,16 @@ jobs:
             exit 1
           fi
 
-      - name: Sync plasmoid version to tag
+      - name: Sync version to plasmoid and README
         run: |
-          sed -i 's/"Version": "[^"]*"/"Version": "${{ steps.version.outputs.version }}"/' plasmoid/metadata.json
+          tag="${{ github.ref_name }}"
+          version="${{ steps.version.outputs.version }}"
+          sed -i "s/\"Version\": \"[^\"]*\"/\"Version\": \"${version}\"/" plasmoid/metadata.json
+          sed -i "s|releases/tag/v[^\"]*\">v[^<]*</|releases/tag/${tag}\">${tag}</|" README.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add plasmoid/metadata.json
-          git diff --cached --quiet || git commit -m "Sync plasmoid version to ${{ github.ref_name }}"
+          git add plasmoid/metadata.json README.md
+          git diff --cached --quiet || git commit -m "Sync version to ${tag}"
           git push origin HEAD:main
 
       - name: Extract changelog for this version
