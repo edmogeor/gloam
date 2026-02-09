@@ -14,10 +14,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
 
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag points to HEAD
+        run: |
+          if ! git merge-base --is-ancestor ${{ github.ref_name }} HEAD; then
+            echo "::error::Tag ${{ github.ref_name }} is not an ancestor of main. Tag the latest commit on main."
+            exit 1
+          fi
 
       - name: Verify script version matches tag
         run: |
