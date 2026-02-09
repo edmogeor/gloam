@@ -2,7 +2,15 @@
 {
 ################################################################################
 #                                                                              #
-#                                   gloam                                      #
+#                        ░██                                                   #
+#                        ░██                                                   #
+#              ░████████ ░██  ░███████   ░██████   ░█████████████              #
+#             ░██    ░██ ░██ ░██    ░██       ░██  ░██   ░██   ░██             #
+#             ░██    ░██ ░██ ░██    ░██  ░███████  ░██   ░██   ░██             #
+#             ░██   ░███ ░██ ░██    ░██ ░██   ░██  ░██   ░██   ░██             #
+#              ░█████░██ ░██  ░███████   ░█████░██ ░██   ░██   ░██             #
+#                    ░██                                                       #
+#              ░███████                                                        #
 #                                                                              #
 #           KDE Plasma 6 Day/Night Theme Synchronizer & Manager                #
 #                                                                              #
@@ -170,6 +178,38 @@ maybe_sudo() {
 
 gloam_cmd() { maybe_sudo "$INSTALL_GLOBAL" "$@"; }
 theme_cmd() { maybe_sudo "${THEME_INSTALL_GLOBAL:-false}" "$@"; }
+
+has_any_config() {
+    local vars=(
+        KVANTUM_LIGHT KVANTUM_DARK STYLE_LIGHT STYLE_DARK
+        DECORATION_LIGHT DECORATION_DARK COLOR_LIGHT COLOR_DARK
+        ICON_LIGHT ICON_DARK CURSOR_LIGHT CURSOR_DARK
+        GTK_LIGHT GTK_DARK KONSOLE_LIGHT KONSOLE_DARK
+        SPLASH_LIGHT SPLASH_DARK SDDM_LIGHT SDDM_DARK
+        APPSTYLE_LIGHT APPSTYLE_DARK WALLPAPER SCRIPT_LIGHT SCRIPT_DARK
+    )
+    for var in "${vars[@]}"; do
+        [[ -n "${!var:-}" ]] && return 0
+    done
+    return 1
+}
+
+status_check() {
+    local label="$1" global="$2" local="$3" test_op="$4" extra="${5:-installed}"
+    local global_ok=false local_ok=false
+    case "$test_op" in
+        -f) [[ -f "$global" ]] && global_ok=true; [[ -f "$local" ]] && local_ok=true ;;
+        -d) [[ -d "$global" ]] && global_ok=true; [[ -d "$local" ]] && local_ok=true ;;
+        -x) [[ -x "$global" ]] && global_ok=true; [[ -x "$local" ]] && local_ok=true ;;
+    esac
+    if [[ "$global_ok" == true ]]; then
+        echo -e "    ${label}: ${GREEN}${extra} (global)${RESET}"
+    elif [[ "$local_ok" == true ]]; then
+        echo -e "    ${label}: ${GREEN}${extra} (local)${RESET}"
+    else
+        echo -e "    ${label}: ${YELLOW}not installed${RESET}"
+    fi
+}
 
 # --- PATH HELPERS -------------------------------------------------------------
 
@@ -760,13 +800,9 @@ set_system_defaults() {
     echo -e "${GREEN}System defaults configured for new users.${RESET}"
 }
 
-maybe_sudo_cp() {
-    local use_sudo="$1" src="$2" dest="$3"
-    if [[ "$use_sudo" == true ]]; then
-        sudo cp "$src" "$dest"
-    else
-        cp "$src" "$dest"
-    fi
+read_json_name() {
+    local file="$1"
+    sed -n 's/.*"Name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$file" 2>/dev/null | head -1
 }
 
 get_friendly_name() {
@@ -777,8 +813,9 @@ get_friendly_name() {
     case "$type" in
         laf)
             for dir in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
-                if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
-                    jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
+                if [[ -f "${dir}/${id}/metadata.json" ]]; then
+                    local name; name=$(read_json_name "${dir}/${id}/metadata.json")
+                    [[ -n "$name" ]] && echo "$name" && return 0
                 elif [[ -f "${dir}/${id}/metadata.desktop" ]]; then
                     grep -m1 "^Name=" "${dir}/${id}/metadata.desktop" 2>/dev/null | cut -d= -f2 && return 0
                 fi
@@ -791,8 +828,9 @@ get_friendly_name() {
             elif [[ "$id" == "kwin4_decoration_qml_"* ]]; then
                 # KPackage/QML decorations - look up name or strip prefix
                 for dir in /usr/share/kwin/decorations "${HOME}/.local/share/kwin/decorations"; do
-                    if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
-                        jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
+                    if [[ -f "${dir}/${id}/metadata.json" ]]; then
+                        local name; name=$(read_json_name "${dir}/${id}/metadata.json")
+                        [[ -n "$name" ]] && echo "$name" && return 0
                     fi
                 done
                 echo "${id#kwin4_decoration_qml_}" && return 0
@@ -802,8 +840,9 @@ get_friendly_name() {
         splash)
             [[ "$id" == "None" ]] && echo "None" && return 0
             for dir in /usr/share/plasma/look-and-feel "${HOME}/.local/share/plasma/look-and-feel"; do
-                if [[ -f "${dir}/${id}/metadata.json" ]] && command -v jq &>/dev/null; then
-                    jq -r '.KPlugin.Name // empty' "${dir}/${id}/metadata.json" 2>/dev/null && return 0
+                if [[ -f "${dir}/${id}/metadata.json" ]]; then
+                    local name; name=$(read_json_name "${dir}/${id}/metadata.json")
+                    [[ -n "$name" ]] && echo "$name" && return 0
                 elif [[ -f "${dir}/${id}/metadata.desktop" ]]; then
                     grep -m1 "^Name=" "${dir}/${id}/metadata.desktop" 2>/dev/null | cut -d= -f2 && return 0
                 fi
@@ -1259,15 +1298,101 @@ check_desktop_environment() {
     fi
 }
 
-check_dependencies() {
-    local missing=()
-    command -v inotifywait &>/dev/null || missing+=("inotify-tools")
-    command -v kreadconfig6 &>/dev/null || missing+=("kreadconfig6")
-    command -v kwriteconfig6 &>/dev/null || missing+=("kwriteconfig6")
-
-    if [[ ${#missing[@]} -gt 0 ]]; then
-        die "Missing dependencies:\n$(printf '  - %s\n' "${missing[@]}")"
+detect_pkg_manager() {
+    if command -v pacman &>/dev/null; then
+        echo "pacman"
+    elif command -v apt &>/dev/null; then
+        echo "apt"
+    elif command -v dnf &>/dev/null; then
+        echo "dnf"
+    elif command -v zypper &>/dev/null; then
+        echo "zypper"
+    else
+        echo ""
     fi
+}
+
+# Map a command/package name to the distro-specific package name
+# Usage: get_pkg_name <package> <pkg_manager>
+get_pkg_name() {
+    local pkg="$1" mgr="$2"
+    case "$pkg" in
+        inotify-tools)
+            echo "inotify-tools" ;;
+        *)
+            echo "$pkg" ;;
+    esac
+}
+
+install_packages() {
+    local mgr="$1"
+    shift
+    local pkgs=("$@")
+
+    case "$mgr" in
+        pacman) sudo pacman -S --noconfirm "${pkgs[@]}" ;;
+        apt)    sudo apt install -y "${pkgs[@]}" ;;
+        dnf)    sudo dnf install -y "${pkgs[@]}" ;;
+        zypper) sudo zypper install -y "${pkgs[@]}" ;;
+    esac
+}
+
+check_dependencies() {
+    # KDE dependencies — required, no offer to install
+    local kde_missing=()
+    command -v kreadconfig6 &>/dev/null || kde_missing+=("kreadconfig6")
+    command -v kwriteconfig6 &>/dev/null || kde_missing+=("kwriteconfig6")
+
+    if [[ ${#kde_missing[@]} -gt 0 ]]; then
+        die "Missing KDE dependencies:\n$(printf '  - %s\n' "${kde_missing[@]}")\nPlease install the KDE Frameworks packages for your distribution."
+    fi
+
+    # Non-KDE dependencies — offer to install
+    # Format: "command:package-name"
+    local deps=("inotifywait:inotify-tools")
+    local missing_cmds=()
+    local missing_pkgs=()
+
+    for entry in "${deps[@]}"; do
+        local cmd="${entry%%:*}"
+        local pkg="${entry##*:}"
+        if ! command -v "$cmd" &>/dev/null; then
+            missing_cmds+=("$cmd")
+            missing_pkgs+=("$pkg")
+        fi
+    done
+
+    [[ ${#missing_pkgs[@]} -eq 0 ]] && return 0
+
+    echo -e "${YELLOW}Missing dependencies:${RESET}"
+    for i in "${!missing_cmds[@]}"; do
+        echo "  - ${missing_cmds[$i]} (${missing_pkgs[$i]})"
+    done
+    echo ""
+
+    local mgr
+    mgr=$(detect_pkg_manager)
+
+    if [[ -z "$mgr" ]]; then
+        die "Could not detect a supported package manager.\nPlease install manually: ${missing_pkgs[*]}"
+    fi
+
+    # Resolve distro-specific package names
+    local resolved_pkgs=()
+    for pkg in "${missing_pkgs[@]}"; do
+        resolved_pkgs+=("$(get_pkg_name "$pkg" "$mgr")")
+    done
+
+    read -rp "Install with $mgr? [Y/n]: " choice
+    if [[ "$choice" =~ ^[Nn]$ ]]; then
+        die "Missing dependencies: ${missing_pkgs[*]}"
+    fi
+
+    echo ""
+    install_packages "$mgr" "${resolved_pkgs[@]}" || die "Failed to install dependencies."
+    echo ""
+    echo -e "${GREEN}Dependencies installed.${RESET}"
+    echo ""
 }
 
 get_laf() {
@@ -1414,10 +1539,26 @@ apply_splash() {
     fi
 }
 
+install_sddm_background_helper() {
+    sudo mkdir -p /usr/local/lib/gloam
+    sudo tee /usr/local/lib/gloam/set-sddm-background > /dev/null <<'SCRIPT'
+#!/bin/bash
+[[ -z "$1" || ! -f "$1" ]] && exit 1
+THEME=$(kreadconfig6 --file /etc/sddm.conf.d/kde_settings.conf --group Theme --key Current 2>/dev/null)
+[[ -z "$THEME" ]] && THEME="breeze"
+THEME_DIR="/usr/share/sddm/themes/$THEME"
+[[ -d "$THEME_DIR" ]] || exit 1
+kwriteconfig6 --file "$THEME_DIR/theme.conf.user" --group General --key background "$1"
+SCRIPT
+    sudo chmod 755 /usr/local/lib/gloam/set-sddm-background
+    echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/set-sddm-background" | \
+        sudo tee /etc/sudoers.d/gloam-sddm-bg > /dev/null
+    sudo chmod 440 /etc/sudoers.d/gloam-sddm-bg
+}
+
 apply_sddm_theme() {
     local theme="$1"
     if [[ -n "$theme" ]]; then
-        # Delay to let KDE finish applying LookAndFeel
         sleep "$DELAY_LAF_PROPAGATE"
         if [[ -x /usr/local/lib/gloam/set-sddm-theme ]]; then
             sudo /usr/local/lib/gloam/set-sddm-theme "$theme" 2>/dev/null || warn "Failed to apply SDDM theme: $theme"
@@ -1552,22 +1693,7 @@ setup_sddm_wallpaper() {
         sudo cp "$best_dark" "/usr/local/lib/gloam/sddm-bg-dark.${ext,,}"
     fi
 
-    # Create wrapper script
-    sudo tee /usr/local/lib/gloam/set-sddm-background > /dev/null <<'SCRIPT'
-#!/bin/bash
-[[ -z "$1" || ! -f "$1" ]] && exit 1
-THEME=$(kreadconfig6 --file /etc/sddm.conf.d/kde_settings.conf --group Theme --key Current 2>/dev/null)
-[[ -z "$THEME" ]] && THEME="breeze"
-THEME_DIR="/usr/share/sddm/themes/$THEME"
-[[ -d "$THEME_DIR" ]] || exit 1
-kwriteconfig6 --file "$THEME_DIR/theme.conf.user" --group General --key background "$1"
-SCRIPT
-    sudo chmod 755 /usr/local/lib/gloam/set-sddm-background
-
-    # Create sudoers rule
-    echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/set-sddm-background" | \
-        sudo tee /etc/sudoers.d/gloam-sddm-bg > /dev/null
-    sudo chmod 440 /etc/sudoers.d/gloam-sddm-bg
+    install_sddm_background_helper
 }
 
 apply_color_scheme() {
@@ -2895,7 +3021,7 @@ do_configure() {
     fi
 
     # Check if anything was configured
-    if [[ -z "${KVANTUM_LIGHT:-}" && -z "${KVANTUM_DARK:-}" && -z "${STYLE_LIGHT:-}" && -z "${STYLE_DARK:-}" && -z "${DECORATION_LIGHT:-}" && -z "${DECORATION_DARK:-}" && -z "${COLOR_LIGHT:-}" && -z "${COLOR_DARK:-}" && -z "${ICON_LIGHT:-}" && -z "${ICON_DARK:-}" && -z "${CURSOR_LIGHT:-}" && -z "${CURSOR_DARK:-}" && -z "${GTK_LIGHT:-}" && -z "${GTK_DARK:-}" && -z "${KONSOLE_LIGHT:-}" && -z "${KONSOLE_DARK:-}" && -z "${SPLASH_LIGHT:-}" && -z "${SPLASH_DARK:-}" && -z "${SDDM_LIGHT:-}" && -z "${SDDM_DARK:-}" && -z "${APPSTYLE_LIGHT:-}" && -z "${APPSTYLE_DARK:-}" && -z "${WALLPAPER:-}" && -z "${SCRIPT_LIGHT:-}" && -z "${SCRIPT_DARK:-}" ]]; then
+    if ! has_any_config; then
         echo ""
         echo "Nothing to configure. Exiting."
         exit 0
@@ -3095,20 +3221,7 @@ do_configure() {
 
         # Set up SDDM wallpaper helper script if backgrounds were bundled
         if [[ -n "$({ compgen -G '/usr/local/lib/gloam/sddm-bg-*' 2>/dev/null || true; })" ]]; then
-            sudo mkdir -p /usr/local/lib/gloam
-            sudo tee /usr/local/lib/gloam/set-sddm-background > /dev/null <<'SCRIPT'
-#!/bin/bash
-[[ -z "$1" || ! -f "$1" ]] && exit 1
-THEME=$(kreadconfig6 --file /etc/sddm.conf.d/kde_settings.conf --group Theme --key Current 2>/dev/null)
-[[ -z "$THEME" ]] && THEME="breeze"
-THEME_DIR="/usr/share/sddm/themes/$THEME"
-[[ -d "$THEME_DIR" ]] || exit 1
-kwriteconfig6 --file "$THEME_DIR/theme.conf.user" --group General --key background "$1"
-SCRIPT
-            sudo chmod 755 /usr/local/lib/gloam/set-sddm-background
-            echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/set-sddm-background" | \
-                sudo tee /etc/sudoers.d/gloam-sddm-bg > /dev/null
-            sudo chmod 440 /etc/sudoers.d/gloam-sddm-bg
+            install_sddm_background_helper
         fi
 
         laf_light="$CUSTOM_THEME_LIGHT"
@@ -3363,6 +3476,10 @@ do_remove() {
         sudo -v || { echo -e "${RED}Sudo required to remove global files.${RESET}"; exit 1; }
     fi
 
+    echo ""
+    echo -e "${BOLD}Removing configuration...${RESET}"
+    echo ""
+
     # Stop and disable service
     systemctl --user stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl --user disable "$SERVICE_NAME" 2>/dev/null || true
@@ -3575,24 +3692,6 @@ do_remove() {
 }
 
 do_status() {
-    # Helper for status checks
-    _status_check() {
-        local label="$1" global="$2" local="$3" test_op="$4" extra="${5:-installed}"
-        local global_ok=false local_ok=false
-        case "$test_op" in
-            -f) [[ -f "$global" ]] && global_ok=true; [[ -f "$local" ]] && local_ok=true ;;
-            -d) [[ -d "$global" ]] && global_ok=true; [[ -d "$local" ]] && local_ok=true ;;
-            -x) [[ -x "$global" ]] && global_ok=true; [[ -x "$local" ]] && local_ok=true ;;
-        esac
-        if [[ "$global_ok" == true ]]; then
-            echo -e "    ${label}: ${GREEN}${extra} (global)${RESET}"
-        elif [[ "$local_ok" == true ]]; then
-            echo -e "    ${label}: ${GREEN}${extra} (local)${RESET}"
-        else
-            echo -e "    ${label}: ${YELLOW}not installed${RESET}"
-        fi
-    }
-
     echo -e "${BOLD}Service status:${RESET}"
     if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
         echo -e "    Running: ${GREEN}yes${RESET}"
@@ -3608,12 +3707,12 @@ do_status() {
     echo ""
     echo -e "${BOLD}Installation locations:${RESET}"
 
-    _status_check "CLI" "/usr/local/bin/gloam" "${HOME}/.local/bin/gloam" -x
-    _status_check "Service" "/etc/systemd/user/${SERVICE_NAME}.service" "${HOME}/.config/systemd/user/${SERVICE_NAME}.service" -f
-    _status_check "Panel widget" "/usr/share/plasma/plasmoids/${PLASMOID_ID}" "${HOME}/.local/share/plasma/plasmoids/${PLASMOID_ID}" -d
-    _status_check "Keyboard shortcut" "/usr/share/applications/gloam-toggle.desktop" "${HOME}/.local/share/applications/gloam-toggle.desktop" -f "installed (Meta+Shift+L)"
-    _status_check "Custom (Light)" "/usr/share/plasma/look-and-feel/org.kde.custom.light" "${HOME}/.local/share/plasma/look-and-feel/org.kde.custom.light" -d
-    _status_check "Custom (Dark)" "/usr/share/plasma/look-and-feel/org.kde.custom.dark" "${HOME}/.local/share/plasma/look-and-feel/org.kde.custom.dark" -d
+    status_check "CLI" "/usr/local/bin/gloam" "${HOME}/.local/bin/gloam" -x
+    status_check "Service" "/etc/systemd/user/${SERVICE_NAME}.service" "${HOME}/.config/systemd/user/${SERVICE_NAME}.service" -f
+    status_check "Panel widget" "/usr/share/plasma/plasmoids/${PLASMOID_ID}" "${HOME}/.local/share/plasma/plasmoids/${PLASMOID_ID}" -d
+    status_check "Keyboard shortcut" "/usr/share/applications/gloam-toggle.desktop" "${HOME}/.local/share/applications/gloam-toggle.desktop" -f "installed (Meta+Shift+L)"
+    status_check "Custom (Light)" "/usr/share/plasma/look-and-feel/org.kde.custom.light" "${HOME}/.local/share/plasma/look-and-feel/org.kde.custom.light" -d
+    status_check "Custom (Dark)" "/usr/share/plasma/look-and-feel/org.kde.custom.dark" "${HOME}/.local/share/plasma/look-and-feel/org.kde.custom.dark" -d
 
     # Show bundled assets in custom themes
     local custom_light_global="/usr/share/plasma/look-and-feel/org.kde.custom.light"
@@ -3761,10 +3860,28 @@ Examples:
 EOF
 }
 
+show_banner() {
+    printf '%b\n' "${BOLD}"
+    cat <<'BANNER'
+           ░██
+           ░██
+ ░████████ ░██  ░███████   ░██████   ░█████████████
+░██    ░██ ░██ ░██    ░██       ░██  ░██   ░██   ░██
+░██    ░██ ░██ ░██    ░██  ░███████  ░██   ░██   ░██
+░██   ░███ ░██ ░██    ░██ ░██   ░██  ░██   ░██   ░██
+ ░█████░██ ░██  ░███████   ░█████░██ ░██   ░██   ░██
+       ░██
+ ░███████
+BANNER
+    printf '%b' "${RESET}"
+    echo ""
+    echo " Syncs Kvantum, GTK, and custom scripts with Plasma 6's"
+    echo " native light/dark (day/night) theme switching - and more."
+    echo
+}
+
 show_help() {
     cat <<EOF
-gloam - A dark/light mode theme switcher for KDE Plasma's day/night cycle
-
 Usage: $0 <command> [options]
 
 Commands:
@@ -3784,6 +3901,8 @@ EOF
 }
 
 # --- MAIN ENTRY POINT ---------------------------------------------------------
+
+show_banner
 
 case "${1:-}" in
     configure) do_configure "$@" ;;
