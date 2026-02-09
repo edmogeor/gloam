@@ -180,3 +180,8 @@ gloam remove        # if installed globally
 ./gloam.sh remove   # if running from source
 ```
 
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+

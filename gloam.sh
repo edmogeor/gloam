@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
 {
-#
-# gloam.sh
-# gloam: Syncs Kvantum, GTK, and custom scripts with Plasma 6's native light/dark (day/night) theme switching - and more.
-#   configure [options]  Scan themes, save config, generate watcher script, enable systemd service
-#                        Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut
-#                        With no options, configures all. With options, only reconfigures specified types.
-#   uninstall            Stop service, remove all installed files
-#   status               Show service status and current configuration
-#   update               Check for and install the latest version
-#   version              Show the installed version
+################################################################################
+#                                                                              #
+#                                   gloam                                      #
+#                                                                              #
+#           KDE Plasma 6 Day/Night Theme Synchronizer & Manager                #
+#                                                                              #
+#  gloam bridges the gap in KDE Plasma by synchronizing external themes that   #
+#  don't switch automatically. It hooks into Plasma's native day/night         #
+#  transition to instantly synchronize Kvantum, GTK apps, Flatpaks, Konsole,   #
+#  and more.                                                                   #
+#                                                                              #
+#  Copyright (c) 2026 edmogeor                                                 #
+#  GitHub:  https://github.com/edmogeor/gloam                                  #
+#  License: MIT                                                                #
+#                                                                              #
+################################################################################
+
+# --- CONFIGURATION & GLOBALS --------------------------------------------------
 
 set -euo pipefail
 
@@ -24,6 +32,7 @@ RESET='\033[0m'
 # Version
 GLOAM_VERSION="1.0.4"
 GLOAM_REPO="edmogeor/gloam"
+
 
 # Global installation mode flags
 INSTALL_GLOBAL=false
@@ -72,6 +81,8 @@ FONT_KEYS=(
     "WM:activeFont"
 )
 
+# --- UTILITIES & LOGGING ------------------------------------------------------
+
 # Log file
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
 LOG_FILE="${LOG_DIR}/gloam.log"
@@ -116,7 +127,8 @@ cleanup() {
         [[ -f "$f" ]] && rm -f "$f"
     done
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'cleanup; exit 130' INT TERM
 
 # Base paths (may be overridden by global install)
 KVANTUM_DIR="${HOME}/.config/Kvantum"
@@ -165,6 +177,8 @@ theme_cmd() {
     fi
 }
 
+# --- PATH HELPERS -------------------------------------------------------------
+
 # Path helper: returns global or local path based on INSTALL_GLOBAL
 global_or_local() {
     local global_path="$1" local_path="$2"
@@ -209,6 +223,8 @@ install_cli_binary() {
     fi
     gloam_cmd chmod 755 "$cli_path"
 }
+
+# --- UPDATE LOGIC -------------------------------------------------------------
 
 # Check for updates from GitHub releases and optionally apply them
 # Arguments: $1 = "verbose" to print "already up to date" message
@@ -293,6 +309,8 @@ do_update() {
     fi
     check_for_updates "verbose"
 }
+
+# --- INSTALLATION (GLOBAL/SYSTEM) ---------------------------------------------
 
 # Check for existing global installation
 check_existing_global_install() {
@@ -816,6 +834,8 @@ show_laf_reminder() {
     echo "You can set them in: System Settings > Quick Settings"
 }
 
+# --- THEME SCANNING -----------------------------------------------------------
+
 scan_kvantum_themes() {
     local themes=()
     for dir in /usr/share/Kvantum "$KVANTUM_DIR"; do
@@ -1017,6 +1037,8 @@ resolve_image_paths() {
     printf '%s\n' "${images[@]}"
 }
 
+# --- ASSET MANAGEMENT ---------------------------------------------------------
+
 generate_wallpaper_pack() {
     local pack_name="$1"
     local display_name="$2"
@@ -1116,6 +1138,8 @@ scan_plasma_styles() {
     done | sort
 }
 
+# --- EXTRAS (WIDGET/SHORTCUT) -------------------------------------------------
+
 install_plasmoid() {
     local script_dir
     script_dir="$(dirname "$(readlink -f "$0")")"
@@ -1198,6 +1222,8 @@ remove_shortcut() {
     return 0
 }
 
+# --- SYSTEMD & SERVICE --------------------------------------------------------
+
 cleanup_stale() {
     local dirty=0
     local local_service="${HOME}/.config/systemd/user/${SERVICE_NAME}.service"
@@ -1245,6 +1271,8 @@ reload_laf_config() {
     LAF_DARK=$(kreadconfig6 --file kdeglobals --group KDE --key DefaultDarkLookAndFeel)
     # Silent reload as per request
 }
+
+# --- THEME APPLICATION --------------------------------------------------------
 
 apply_browser_color_scheme() {
     local mode="$1"  # 'light' or 'dark'
@@ -1614,6 +1642,8 @@ request_sudo_for_global_install() {
     fi
     return 0
 }
+
+# --- THEME GENERATION & BUNDLING ----------------------------------------------
 
 # Bundle an icon or cursor theme (and its symlink dependencies) into a custom theme directory.
 # Args: asset_type ("icons"|"cursors") theme_name theme_dir mode
@@ -2185,6 +2215,8 @@ load_config_strict() {
     # shellcheck source=/dev/null
     source "$CONFIG_FILE"
 }
+
+# --- CLI COMMANDS -------------------------------------------------------------
 
 # Switch to a specific mode: "light" or "dark"
 do_switch() {
@@ -3816,6 +3848,8 @@ Commands:
 Run '$0 configure --help' for detailed configuration options.
 EOF
 }
+
+# --- MAIN ENTRY POINT ---------------------------------------------------------
 
 case "${1:-}" in
     configure) do_configure "$@" ;;
