@@ -6,7 +6,7 @@ This plan outlines the steps to improve the readability and professionalism of t
 
 ### Add `LICENSE` File
 - Create a new `LICENSE` file in the root directory.
-- Use the MIT License (unless another is preferred) to ensure the project is open-source compliant.
+- Use the GPLv3 License to ensure the project remains free and open-source.
 
 ### Update `README.md`
 - Add a "License" section at the bottom of the README.
@@ -16,8 +16,8 @@ This plan outlines the steps to improve the readability and professionalism of t
 ### Improve Intro Text
 - Update the header comment at the top of the script to be more descriptive and professional.
 - Pull descriptive text and feature summaries from `README.md` to provide a better overview within the script itself.
-- Add a Copyright notice (e.g., `Copyright (c) 2024-2026 George Edmo`).
-- Add a short License notice (e.g., "This project is licensed under the MIT License - see the LICENSE file for details").
+- Add a Copyright notice (e.g., `Copyright (c) 2026 edmogeor`).
+- Add a short License notice (e.g., "This project is licensed under the GPLv3 License - see the LICENSE file for details").
 
 ### Clearer Section Headers
 The script is currently over 3800 lines. We will add clear, consistent header banners for each major section to improve navigability:

@@ -13,7 +13,7 @@
 #                                                                              #
 #  Copyright (c) 2026 edmogeor                                                 #
 #  GitHub:  https://github.com/edmogeor/gloam                                  #
-#  License: MIT                                                                #
+#  License: GPLv3                                                              #
 #                                                                              #
 ################################################################################
 
