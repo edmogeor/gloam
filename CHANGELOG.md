@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.4] - 2026-02-09
+
+### Changed
+- Consolidate three wallpaper packs (Custom Dynamic/Light/Dark) into a single "Custom" pack
+- Rename wallpaper pack directory from `gloam-dynamic` to `gloam`
+- SDDM and lockscreen now source wallpapers from the single pack's `images/` and `images_dark/` directories
+
 ## [1.0.3] - 2026-02-08
 
 ### Added

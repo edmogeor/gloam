@@ -22,7 +22,7 @@ BLUE='\033[0;34m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.0.3"
+GLOAM_VERSION="1.0.4"
 GLOAM_REPO="edmogeor/gloam"
 
 # Global installation mode flags
