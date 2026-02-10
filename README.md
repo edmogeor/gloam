@@ -62,8 +62,7 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 - **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
 - [`gum`](https://github.com/charmbracelet/gum): Required for styled terminal UI (prompts, spinners, menus).
 - `inotify-tools`: Required for monitoring configuration changes.
-- `kvantum`: If you want to manage Kvantum themes.
-- `flatpak`: Optional. If installed, GTK/Kvantum themes and icons are automatically applied to Flatpak apps.
+
 
 ### Optional: Seamless Qt App Refresh
 
