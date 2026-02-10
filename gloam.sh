@@ -2490,17 +2490,21 @@ do_watch() {
         (( wait_count++ ))
     done
 
-    # Determine the correct theme from the day/night cycle
-    local is_daylight
-    is_daylight=$(qdbus6 org.kde.KWin /org/kde/KWin/NightLight org.kde.KWin.NightLight.daylight 2>/dev/null)
-    if [[ "$is_daylight" == "false" ]]; then
-        PREV_LAF="$LAF_DARK"
-    else
-        PREV_LAF="$LAF_LIGHT"
-    fi
-    log "Initial theme: $PREV_LAF"
     local auto_mode
     auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
+    if [[ "$auto_mode" == "true" ]]; then
+        local is_daylight
+        is_daylight=$(qdbus6 org.kde.KWin /org/kde/KWin/NightLight org.kde.KWin.NightLight.daylight 2>/dev/null)
+        if [[ "$is_daylight" == "false" ]]; then
+            PREV_LAF="$LAF_DARK"
+        else
+            PREV_LAF="$LAF_LIGHT"
+        fi
+    else
+        PREV_LAF=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage)
+        [[ -z "$PREV_LAF" || ("$PREV_LAF" != "$LAF_LIGHT" && "$PREV_LAF" != "$LAF_DARK") ]] && PREV_LAF="$LAF_DARK"
+    fi
+    log "Initial theme: $PREV_LAF"
     plasma-apply-lookandfeel -a "$PREV_LAF" 2>/dev/null
     [[ "$auto_mode" == "true" ]] && kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
     apply_theme "$PREV_LAF" true

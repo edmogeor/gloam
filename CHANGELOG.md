@@ -6,6 +6,7 @@
 - Theme now applies before session restore so windows start with correct theme
 - Service runs immediately after KWin starts using `After=plasma-kwin_wayland.service`
 - Uses `Type=notify` with `systemd-notify --ready` to block session restore until theme is applied
+- Respect auto mode setting on login — only switch themes based on day/night cycle if auto mode is enabled
 
 ## [1.1.1] - 2026-02-10
 
