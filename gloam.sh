@@ -2693,6 +2693,7 @@ do_configure() {
         "  gloam modifies Plasma theme settings, system configs, and user files." \
         "  It is recommended to back up your system before proceeding." \
         "  The authors are not responsible for any system issues."
+    echo ""
     _gum_confirm "Continue?" || { msg_muted "Aborted."; exit 0; }
 
     # Handle config import - source the file and skip all interactive questions
