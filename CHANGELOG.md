@@ -2,6 +2,9 @@
 
 ## [1.1.2] - 2026-02-10
 
+### Changed
+- Replace inotifywait file watcher with DBus monitor for theme change detection (removes inotify-tools dependency)
+
 ### Fixed
 - Theme now applies before session restore so windows start with correct theme
 - Service runs immediately after KWin starts using `After=plasma-kwin_wayland.service`
@@ -41,7 +44,7 @@
 - Folded follow-up hints into error/warn messages so they are captured in the log file
 - Capitalized all removal status messages for consistency
 - Replaced jq dependency with pure bash JSON parsing
-- Suppress inotifywait noise in watch mode (`-q` flag)
+- Suppress inotifywait noise in watch mode (`-q` flag) (removed in v1.1.2)
 - Standardized capitalization across all status and removal messages
 - Import/export now prompts for paths when not provided as arguments
 

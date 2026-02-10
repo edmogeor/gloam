@@ -1530,8 +1530,6 @@ detect_pkg_manager() {
 get_pkg_name() {
     local pkg="$1" mgr="$2"
     case "$pkg" in
-        inotify-tools)
-            echo "inotify-tools" ;;
         gum)
             echo "gum" ;;
         *)
@@ -1569,7 +1567,7 @@ check_dependencies() {
 
     # Non-KDE dependencies — offer to install
     # Format: "command:package-name"
-    local deps=("inotifywait:inotify-tools" "gum:gum")
+    local deps=("gum:gum")
     local missing_cmds=()
     local missing_pkgs=()
 
@@ -2477,10 +2475,6 @@ do_watch() {
     # shellcheck source=/dev/null
     source "$CONFIG_FILE"
 
-    if ! command -v inotifywait &>/dev/null; then
-        die "inotifywait not found. Install inotify-tools."
-    fi
-
     log "Watcher started"
 
     # Wait for KNightTime dbus service
@@ -2548,8 +2542,9 @@ do_watch() {
     systemd-notify --ready 2>/dev/null || true
 
     local last_apply=0
-    inotifywait -q -m -e moved_to "${HOME}/.config" --include 'kdeglobals' |
-    while read -r; do
+    dbus-monitor --session "type='signal',interface='org.kde.KGlobalSettings',member='notifyChange',path='/KGlobalSettings'" 2>/dev/null |
+    while read -r line; do
+        [[ "$line" == *"member=notifyChange"* ]] || continue
         # Debounce: ignore events within 3 seconds of last apply to prevent
         # feedback loop with Plasma's AutomaticLookAndFeel
         local now
