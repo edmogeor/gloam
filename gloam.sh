@@ -2683,6 +2683,7 @@ do_configure() {
     fi
 
     # Show disclaimer
+    echo ""
     gum style \
         --foreground "$CLR_WARNING" \
         --border normal \
@@ -2692,7 +2693,6 @@ do_configure() {
         "  gloam modifies Plasma theme settings, system configs, and user files." \
         "  It is recommended to back up your system before proceeding." \
         "  The authors are not responsible for any system issues."
-    echo ""
     _gum_confirm "Continue?" || { msg_muted "Aborted."; exit 0; }
 
     # Handle config import - source the file and skip all interactive questions
@@ -3650,6 +3650,7 @@ do_remove() {
             admin_user=$(grep "^user=" "$GLOBAL_INSTALL_MARKER" 2>/dev/null | cut -d= -f2)
             admin_date=$(grep "^date=" "$GLOBAL_INSTALL_MARKER" 2>/dev/null | cut -d= -f2)
 
+            echo ""
             gum style --border double --border-foreground "$CLR_WARNING" --padding "0 2" --foreground "$CLR_WARNING" \
                 "$(gum style --bold "⚠ This will remove the global installation.")" \
                 "" \
@@ -3670,7 +3671,7 @@ do_remove() {
     # Helper to print removal status
     local _removed_count=0
     _remove_print() {
-        (( _removed_count++ ))
+        (( _removed_count++ )) || true
         _spinner_print "$(msg_muted "Removed: $1")"
     }
 
@@ -3779,14 +3780,14 @@ do_remove() {
     fi
 
     # Remove config and log files
-    [[ -f "$CONFIG_FILE" ]] && { rm "$CONFIG_FILE"; _remove_print "Configuration (~/.config/gloam.conf)"; }
-    [[ -f "$LOG_FILE" ]] && { rm "$LOG_FILE"; _remove_print "Log file"; }
+    [[ -f "$CONFIG_FILE" ]] && { rm "$CONFIG_FILE"; _remove_print "Configuration (~/.config/gloam.conf)"; } || true
+    [[ -f "$LOG_FILE" ]] && { rm "$LOG_FILE"; _remove_print "Log file"; } || true
 
     # Remove service files
     local local_service="${HOME}/.config/systemd/user/${SERVICE_NAME}.service"
-    [[ -f "$local_service" ]] && { rm "$local_service"; _remove_print "User service"; }
-    [[ -L "$global_service_link" ]] && { sudo rm "$global_service_link"; _remove_print "Global service autostart"; }
-    [[ -f "$global_service" ]] && { sudo rm "$global_service"; _remove_print "Global service (/etc/systemd/user/gloam.service)"; }
+    [[ -f "$local_service" ]] && { rm "$local_service"; _remove_print "User service"; } || true
+    [[ -L "$global_service_link" ]] && { sudo rm "$global_service_link"; _remove_print "Global service autostart"; } || true
+    [[ -f "$global_service" ]] && { sudo rm "$global_service"; _remove_print "Global service (/etc/systemd/user/gloam.service)"; } || true
 
     # Remove CLI
     local local_cli="${HOME}/.local/bin/gloam"
