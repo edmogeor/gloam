@@ -769,7 +769,7 @@ install_bundled_assets_system_wide() {
 
     # Install bundled wallpapers to /usr/share/wallpapers/
     if [[ -d "${theme_dir_light}/contents/wallpapers" ]]; then
-        for pack_dir in "${theme_dir_light}/contents/wallpapers"/gloam-*/; do
+        for pack_dir in "${theme_dir_light}/contents/wallpapers"/gloam*/; do
             [[ -d "$pack_dir" ]] || continue
             local pack_name
             pack_name="$(basename "$pack_dir")"
@@ -825,7 +825,7 @@ push_config_to_users() {
             local panel_config="${HOME}/.config/plasma-org.kde.plasma.desktop-appletsrc"
             if [[ -f "$panel_config" ]]; then
                 sudo cp "$panel_config" "${homedir}/.config/plasma-org.kde.plasma.desktop-appletsrc"
-                sudo sed -i 's|Image=file://.*/wallpapers/gloam-|Image=file:///usr/share/wallpapers/gloam-|g' \
+                sudo sed -i 's|Image=file://.*/wallpapers/gloam|Image=file:///usr/share/wallpapers/gloam|g' \
                     "${homedir}/.config/plasma-org.kde.plasma.desktop-appletsrc"
                 sudo chown "$username:" "${homedir}/.config/plasma-org.kde.plasma.desktop-appletsrc"
             fi
@@ -939,7 +939,7 @@ set_system_defaults() {
         if [[ -f "$panel_config" ]]; then
             track_skel_file /etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
             sudo cp "$panel_config" /etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
-            sudo sed -i 's|Image=file://.*/wallpapers/gloam-|Image=file:///usr/share/wallpapers/gloam-|g' \
+            sudo sed -i 's|Image=file://.*/wallpapers/gloam|Image=file:///usr/share/wallpapers/gloam|g' \
                 /etc/skel/.config/plasma-org.kde.plasma.desktop-appletsrc
         fi
 
