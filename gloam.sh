@@ -1780,12 +1780,17 @@ apply_sddm_theme() {
     local theme="$1"
     if [[ -n "$theme" ]]; then
         sleep "$DELAY_LAF_PROPAGATE"
-        if [[ -x /usr/local/lib/gloam/set-sddm-theme ]]; then
-            sudo /usr/local/lib/gloam/set-sddm-theme "$theme" 2>/dev/null || warn "Failed to apply SDDM theme: $theme"
-        else
-            sudo kwriteconfig6 --file /etc/sddm.conf.d/kde_settings.conf \
-                --group Theme --key Current "$theme" 2>/dev/null || warn "Failed to apply SDDM theme: $theme"
-        fi
+        local attempt
+        for attempt in 1 2 3; do
+            if [[ -x /usr/local/lib/gloam/set-sddm-theme ]]; then
+                sudo /usr/local/lib/gloam/set-sddm-theme "$theme" 2>/dev/null && return 0
+            else
+                sudo kwriteconfig6 --file /etc/sddm.conf.d/kde_settings.conf \
+                    --group Theme --key Current "$theme" 2>/dev/null && return 0
+            fi
+            (( attempt < 3 )) && sleep 1
+        done
+        warn "Failed to apply SDDM theme after $attempt attempts: $theme"
     fi
 }
 
