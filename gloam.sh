@@ -883,6 +883,10 @@ push_config_to_users() {
             fi
         fi
 
+        # Register keyboard shortcut for this user
+        sudo -u "$username" kwriteconfig6 --file "${homedir}/.config/kglobalshortcutsrc" \
+            --group services --group "$SHORTCUT_ID" --key "_launch" "Meta+Shift+L" 2>/dev/null || true
+
         # Install systemd service for this user (if not using global service dir)
         if [[ "$INSTALL_GLOBAL" != true ]]; then
             sudo mkdir -p "$target_service_dir"
