@@ -1780,17 +1780,12 @@ apply_sddm_theme() {
     local theme="$1"
     if [[ -n "$theme" ]]; then
         sleep "$DELAY_LAF_PROPAGATE"
-        local attempt
-        for attempt in 1 2 3; do
-            if [[ -x /usr/local/lib/gloam/set-sddm-theme ]]; then
-                sudo /usr/local/lib/gloam/set-sddm-theme "$theme" 2>/dev/null && return 0
-            else
-                sudo kwriteconfig6 --file /etc/sddm.conf.d/kde_settings.conf \
-                    --group Theme --key Current "$theme" 2>/dev/null && return 0
-            fi
-            (( attempt < 3 )) && sleep 1
-        done
-        warn "Failed to apply SDDM theme after $attempt attempts: $theme"
+        if [[ -x /usr/local/lib/gloam/set-sddm-theme ]]; then
+            sudo /usr/local/lib/gloam/set-sddm-theme "$theme" 2>/dev/null || warn "Failed to apply SDDM theme: $theme"
+        else
+            sudo kwriteconfig6 --file /etc/sddm.conf.d/kde_settings.conf \
+                --group Theme --key Current "$theme" 2>/dev/null || warn "Failed to apply SDDM theme: $theme"
+        fi
     fi
 }
 
@@ -2498,6 +2493,22 @@ do_watch() {
         sleep "$DELAY_PLASMA_POLL"
         (( wait_count++ ))
     done
+
+    # Wait for kded6 (KDE daemon) so QT apps can pick up theme changes
+    wait_count=0
+    while ! dbus-send --session --dest=org.freedesktop.DBus --print-reply \
+        /org/freedesktop/DBus org.freedesktop.DBus.NameHasOwner \
+        string:"org.kde.kded6" 2>/dev/null | grep -q "boolean true"; do
+        if (( wait_count >= PLASMA_POLL_MAX )); then
+            log "kded6 not detected after $(( PLASMA_POLL_MAX / 4 ))s, proceeding anyway"
+            break
+        fi
+        sleep "$DELAY_PLASMA_POLL"
+        (( wait_count++ ))
+    done
+
+    # Give QT apps a moment to finish initializing after kded6 is up
+    sleep "$DELAY_LAF_PROPAGATE"
 
     PREV_LAF=$(get_laf)
     log "Initial theme: $PREV_LAF"

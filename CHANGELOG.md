@@ -13,7 +13,7 @@
 - Unbound variable crash in `select_themes` when light and dark choices are identical
 - Silent exit in `apply_sddm_for_current_mode` when no wallpaper background found (`set -e`)
 - Missing spacing before Konsole profiles prompt
-- SDDM theme application now retries up to 3 times to handle transient sudo/session failures at login
+- Wait for kded6 (KDE daemon) at login before applying themes so QT apps pick up changes
 
 ## [1.1.0] - 2026-02-09
 
