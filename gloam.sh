@@ -2479,11 +2479,11 @@ do_watch() {
 
     log "Watcher started"
 
-    # Wait for KWin to be available (needed for day/night query)
+    # Wait for KWin dbus interface (service is started via systemd ordering, just need dbus ready)
     local wait_count=0
     while ! qdbus6 org.kde.KWin /org/kde/KWin/NightLight org.kde.KWin.NightLight.daylight &>/dev/null; do
-        if (( wait_count >= 40 )); then
-            log "KWin not detected after 10s, proceeding anyway"
+        if (( wait_count >= 20 )); then
+            log "KWin dbus not ready after 5s, proceeding anyway"
             break
         fi
         sleep 0.25
@@ -3620,8 +3620,8 @@ EOF
 
     local service_content="[Unit]
 Description=Plasma Light/Dark Theme Sync
-After=graphical-session.target
-Before=plasma-restoresession.service plasma-kded.service autostart.target
+After=plasma-core.target
+Before=plasma-workspace.target
 
 [Service]${exec_condition}
 Type=notify
