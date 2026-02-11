@@ -61,18 +61,18 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 
 - **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
 - [`gum`](https://github.com/charmbracelet/gum): Required for styled terminal UI (prompts, spinners, menus).
+- **Build tools** (`cmake`, `make`, `patch`, `git`, `curl`): Required for building the Plasma patches. The installer will offer to install these if missing.
 
 
-### Optional: Seamless Qt App Refresh
+### Plasma Patches
 
-By default, some Qt applications may not refresh their styles until restarted. To enable seamless live refreshing of all Qt apps when switching themes, install the [plasma-qt-forcerefresh](https://github.com/edmogeor/plasma-qt-forcerefresh) patch:
+During configuration, gloam builds and installs two source patches that fix limitations in Plasma's live theme switching:
 
-```bash
-git clone https://github.com/edmogeor/plasma-qt-forcerefresh.git
-cd plasma-qt-forcerefresh && ./plasma-integration-patch-manager.sh install
-```
+- **plasma-integration (Qt App Theme Refresh)** — Qt apps (Dolphin, Kate, etc.) don't refresh their styles when the colour scheme changes at runtime. This patch adds a DBus signal handler (`org.kde.KGlobalSettings.forceRefresh`) that forces an immediate style and palette reload in every running Qt app, without restarting them.
 
-This patches `plasma-integration` to add a DBus signal that forces Qt apps to reload their styles without restarting.
+- **plasma-workspace (Autoswitcher Override Fix)** — Plasma's `LookAndFeelAutoSwitcher` re-applies the day/night theme whenever KNightTime recalculates the schedule (e.g. after a GeoClue location poll), overriding any manual light/dark toggle. This patch changes schedule refreshes to only update the transition timer without touching the current theme, so manual toggles stick until the next real day/night boundary.
+
+Both patches are built from source during `gloam configure` and are cleanly removed by `gloam remove`.
 
 ### Flatpak Notes
 

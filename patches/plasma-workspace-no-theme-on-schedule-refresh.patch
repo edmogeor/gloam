@@ -1,0 +1,41 @@
+From: gloam <gloam@patch>
+Subject: [PATCH] lookandfeel: don't apply theme on schedule refresh
+
+When KNightTime emits a schedule change (e.g. from a GeoClue position
+update), the autoswitcher was calling rescheduleAndUpdateAuto() which
+both updates the timer AND force-applies the schedule-correct theme.
+This overrides any manual light/dark toggle the user made.
+
+Change the scheduleChanged handler to only call reschedule(), which
+updates the timer to the new transition boundary without touching the
+current theme.  The theme is still applied:
+  - at startup (reconfigure → rescheduleAndUpdateNow)
+  - when the timer fires at an actual transition boundary
+  - on clock skew (rescheduleAndUpdateNow)
+
+This lets users manually toggle between light and dark and have it
+stick until the next real day/night transition.
+
+---
+ kcms/lookandfeel/kded/lookandfeelautoswitcher.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/kcms/lookandfeel/kded/lookandfeelautoswitcher.cpp b/kcms/lookandfeel/kded/lookandfeelautoswitcher.cpp
+index abcdef1..1234567 100644
+--- a/kcms/lookandfeel/kded/lookandfeelautoswitcher.cpp
++++ b/kcms/lookandfeel/kded/lookandfeelautoswitcher.cpp
+@@ -84,7 +84,12 @@ void LookAndFeelAutoSwitcher::reconfigure()
+             connect(m_scheduleProvider.get(), &KDarkLightScheduleProvider::scheduleChanged, this, [this]() {
+                 m_state->setSerializedSchedule(m_scheduleProvider->state());
+                 m_state->save();
+-
+-                rescheduleAndUpdateAuto();
++
++                // Only update the timer to the new transition times.
++                // Don't apply the theme — that would override a manual
++                // toggle.  The theme is applied when the timer fires at
++                // the actual transition boundary, on startup, or on
++                // clock-skew.
++                reschedule();
+             });
+         }

@@ -1,0 +1,50 @@
+diff --git a/qt6/src/platformtheme/khintssettings.cpp b/qt6/src/platformtheme/khintssettings.cpp
+index 35e464b..04f6ee2 100644
+--- a/qt6/src/platformtheme/khintssettings.cpp
++++ b/qt6/src/platformtheme/khintssettings.cpp
+@@ -189,6 +189,8 @@ QStringList KHintsSettings::xdgIconThemePaths() const
+ 
+ void KHintsSettings::delayedDBusConnects()
+ {
++    QDBusConnection::sessionBus()
++        .connect(QString(), QStringLiteral("/KGlobalSettings"), QStringLiteral("org.kde.KGlobalSettings"), QStringLiteral("forceRefresh"), this, SLOT(forceStyleRefresh()));
+     QDBusConnection::sessionBus()
+         .connect(QString(), QStringLiteral("/KToolBar"), QStringLiteral("org.kde.KToolBar"), QStringLiteral("styleChanged"), this, SLOT(toolbarStyleChanged()));
+     QDBusConnection::sessionBus().connect(QString(),
+@@ -229,6 +231,24 @@ void KHintsSettings::toolbarStyleChanged()
+     }
+ }
+ 
++void KHintsSettings::forceStyleRefresh()
++{
++    QApplication *app = qobject_cast<QApplication *>(QCoreApplication::instance());
++    if (!app) {
++        return;
++    }
++
++    mKdeGlobals->reparseConfiguration();
++
++    // Force style recreation by setting the same style again
++    if (app->style()) {
++        QString currentStyle = app->style()->name();
++        app->setStyle(currentStyle);
++    }
++
++    loadPalettes();
++}
++
+ void KHintsSettings::slotNotifyChange(int type, int arg)
+ {
+     mKdeGlobals->reparseConfiguration();
+diff --git a/qt6/src/platformtheme/khintssettings.h b/qt6/src/platformtheme/khintssettings.h
+index afc8db3..fc41c94 100644
+--- a/qt6/src/platformtheme/khintssettings.h
++++ b/qt6/src/platformtheme/khintssettings.h
+@@ -74,6 +74,7 @@ private Q_SLOTS:
+     void delayedDBusConnects();
+     void setupIconLoader();
+     void toolbarStyleChanged();
++    void forceStyleRefresh();
+     void slotNotifyChange(int type, int arg);
+     void slotPortalSettingChanged(const QString &group, const QString &key, const QDBusVariant &value);
+ 

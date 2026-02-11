@@ -293,12 +293,18 @@ msg_muted() {
     gum style --foreground "$CLR_MUTED" "$@"
 }
 
+# Resolve script directory once (before any cd can change cwd)
+GLOAM_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+
 # Base paths (may be overridden by global install)
 KVANTUM_DIR="${HOME}/.config/Kvantum"
 CONFIG_FILE="${HOME}/.config/gloam.conf"
 SERVICE_NAME="gloam"
 PLASMOID_ID="org.kde.plasma.lightdarktoggle"
 SHORTCUT_ID="gloam-toggle.desktop"
+
+# Patch management
+PATCH_BUILD_DIR="${HOME}/.cache/gloam/patch-build"
 
 # Delays (seconds) for KDE to finish writing configs after LookAndFeel apply
 DELAY_LAF_SETTLE=0.5
@@ -1532,6 +1538,27 @@ get_pkg_name() {
     case "$pkg" in
         gum)
             echo "gum" ;;
+        cmake)
+            case "$mgr" in
+                apt) echo "cmake" ;;
+                *)   echo "cmake" ;;
+            esac ;;
+        make)
+            case "$mgr" in
+                apt)    echo "build-essential" ;;
+                dnf)    echo "make" ;;
+                zypper) echo "make" ;;
+                *)      echo "make" ;;
+            esac ;;
+        patch)
+            echo "patch" ;;
+        nm)
+            case "$mgr" in
+                apt)    echo "binutils" ;;
+                dnf)    echo "binutils" ;;
+                zypper) echo "binutils" ;;
+                *)      echo "binutils" ;;
+            esac ;;
         *)
             echo "$pkg" ;;
     esac
@@ -1567,7 +1594,7 @@ check_dependencies() {
 
     # Non-KDE dependencies — offer to install
     # Format: "command:package-name"
-    local deps=("gum:gum")
+    local deps=("gum:gum" "cmake:cmake" "make:make" "patch:patch" "git:git" "curl:curl")
     local missing_cmds=()
     local missing_pkgs=()
 
@@ -1613,6 +1640,381 @@ check_dependencies() {
 
     install_packages "$mgr" "${resolved_pkgs[@]}" || { echo -e "${RED}Failed to install dependencies: ${resolved_pkgs[*]}${RESET}"; exit 1; }
     echo -e "${GREEN}${BOLD}Dependencies installed.${RESET}"
+}
+
+# --- PATCH MANAGEMENT ---------------------------------------------------------
+#
+# gloam ships two source patches for Plasma that fix issues with live theme
+# switching. These are treated as soft dependencies — gloam works without them
+# but the experience is degraded.
+#
+# 1. plasma-integration (forceRefresh)
+#    Qt apps (Dolphin, Kate, Gwenview, etc.) don't refresh their palette when
+#    the colour scheme changes at runtime. This patch adds a DBus signal
+#    handler (org.kde.KGlobalSettings.forceRefresh) that forces an immediate
+#    style + palette reload in every running Qt app.
+#
+# 2. plasma-workspace (autoswitcher schedule-only refresh)
+#    Plasma's LookAndFeelAutoSwitcher re-applies the "correct" theme every
+#    time KNightTime recalculates the schedule (e.g. after a GeoClue location
+#    poll). This overrides any manual light/dark toggle the user made. The
+#    patch changes schedule refreshes to only update the transition timer
+#    without touching the current theme, so manual toggles stick until the
+#    next real day/night boundary.
+
+# Detect if the plasma-integration forceRefresh patch is installed
+is_patch_plasma_integration_installed() {
+    command -v nm &>/dev/null || return 1
+    local so_file
+    for so_file in /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so \
+                   /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so; do
+        if [[ -f "$so_file" ]] && nm -C "$so_file" 2>/dev/null | grep "forceStyleRefresh" > /dev/null; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Detect if the plasma-workspace autoswitcher patch is installed
+is_patch_plasma_workspace_installed() {
+    # Check for backup of original .so (means our patched version is in place)
+    for candidate in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+        [[ -f "${candidate}/lookandfeelautoswitcher.so.gloam-orig" ]] && return 0
+    done
+    return 1
+}
+
+install_patch_plasma_integration() {
+    local patch_file="${GLOAM_SCRIPT_DIR}/patches/plasma-integration-force-refresh.patch"
+    local src_dir="${PATCH_BUILD_DIR}/plasma-integration"
+
+    [[ -f "$patch_file" ]] || { error "Patch file not found: $patch_file"; return 1; }
+    _spinner_start "Building plasma-integration with forceRefresh patch..."
+
+    rm -rf "$src_dir"
+    mkdir -p "$(dirname "$src_dir")"
+    if ! git clone --depth 1 https://invent.kde.org/plasma/plasma-integration.git "$src_dir" 2>/dev/null; then
+        _spinner_stop
+        error "Failed to clone plasma-integration repository."
+        return 1
+    fi
+
+    # Build in a subshell to preserve working directory
+    (
+        cd "$src_dir" || exit 1
+        patch -p1 < "$patch_file" >/dev/null 2>&1
+        mkdir -p build && cd build || exit 1
+        cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_QT5=OFF -DBUILD_QT6=ON >/dev/null 2>&1 || exit 2
+        make -j"$(nproc)" >/dev/null 2>&1 || exit 3
+    )
+    local build_rc=$?
+    if [[ $build_rc -ne 0 ]]; then
+        _spinner_stop
+        case $build_rc in
+            2) error "CMake configure failed. You may need to install build dependencies for plasma-integration." ;;
+            *) error "Build failed for plasma-integration." ;;
+        esac
+        return 1
+    fi
+
+    _spinner_stop
+
+    msg_info "Installing plasma-integration (requires sudo)..."
+    sudo make -C "${src_dir}/build" install >/dev/null 2>&1
+
+    msg_ok "plasma-integration forceRefresh patch installed."
+}
+
+install_patch_plasma_workspace() {
+    local patch_file="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-no-theme-on-schedule-refresh.patch"
+    local standalone_dir="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-autoswitcher"
+    local build_dir="${PATCH_BUILD_DIR}/plasma-workspace-autoswitcher"
+
+    [[ -f "$patch_file" ]] || { error "Patch file not found: $patch_file"; return 1; }
+    [[ -f "${standalone_dir}/CMakeLists.txt" ]] || { error "Standalone build files not found: $standalone_dir"; return 1; }
+
+    _spinner_start "Building plasma-workspace autoswitcher patch..."
+
+    rm -rf "$build_dir"
+    mkdir -p "$build_dir"
+
+    # Fetch only the source files we need from the KDED module
+    local base_url="https://invent.kde.org/plasma/plasma-workspace/-/raw/master"
+    local kded_path="kcms/lookandfeel/kded"
+    local kcfg_path="kcms/lookandfeel"
+    local files=(
+        "${kded_path}/lookandfeelautoswitcher.cpp"
+        "${kded_path}/lookandfeelautoswitcher.h"
+        "${kded_path}/idletimeout.cpp"
+        "${kded_path}/idletimeout.h"
+        "${kded_path}/lookandfeelautoswitcher.json"
+        "${kded_path}/lookandfeelautoswitcherstate.kcfg"
+        "${kcfg_path}/lookandfeelsettings.kcfg"
+    )
+
+    for f in "${files[@]}"; do
+        local dest="${build_dir}/$(basename "$f")"
+        if ! curl -fsSL "${base_url}/${f}" -o "$dest" 2>/dev/null; then
+            _spinner_stop
+            error "Failed to download: $f"
+            return 1
+        fi
+    done
+
+    # Copy the standalone CMakeLists.txt
+    cp "${standalone_dir}/CMakeLists.txt" "$build_dir/"
+
+    # Apply the patch: in the scheduleChanged lambda, replace
+    # rescheduleAndUpdateAuto() with reschedule() so that schedule
+    # refreshes (e.g. from GeoClue) only update the timer, not the theme.
+    # We target the specific instance after m_state->save() in the lambda,
+    # leaving the timer connection and function definition untouched.
+    if ! grep -q 'm_state->save' "${build_dir}/lookandfeelautoswitcher.cpp"; then
+        _spinner_stop
+        error "Source file does not match expected layout. Upstream may have changed."
+        return 1
+    fi
+
+    # Build in a subshell to preserve working directory
+    (
+        cd "$build_dir" || exit 1
+        sed -i '/m_state->save/{n;n;s/rescheduleAndUpdateAuto/reschedule/}' lookandfeelautoswitcher.cpp
+        mkdir -p build && cd build || exit 1
+        cmake .. -DCMAKE_INSTALL_PREFIX=/usr >/dev/null 2>&1 || exit 2
+        make -j"$(nproc)" >/dev/null 2>&1 || exit 3
+    )
+    local build_rc=$?
+    if [[ $build_rc -ne 0 ]]; then
+        _spinner_stop
+        case $build_rc in
+            2) error "CMake configure failed for autoswitcher module. Check build dependencies." ;;
+            *) error "Build failed for autoswitcher module." ;;
+        esac
+        return 1
+    fi
+
+    _spinner_stop
+
+    # Find the built .so
+    local built_so
+    built_so=$(find "${build_dir}/build" -name "lookandfeelautoswitcher.so" 2>/dev/null | head -1)
+    if [[ -z "$built_so" ]]; then
+        error "Build produced no output: lookandfeelautoswitcher.so not found."
+        return 1
+    fi
+
+    # Find the install location
+    local install_dir=""
+    for candidate in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+        if [[ -d "$candidate" ]]; then
+            install_dir="$candidate"
+            break
+        fi
+    done
+    if [[ -z "$install_dir" ]]; then
+        error "Could not find KDED plugin directory."
+        return 1
+    fi
+
+    # Back up the original before replacing
+    local original="${install_dir}/lookandfeelautoswitcher.so"
+    if [[ -f "$original" && ! -f "${original}.gloam-orig" ]]; then
+        sudo cp "$original" "${original}.gloam-orig"
+    fi
+
+    msg_info "Installing autoswitcher module (requires sudo)..."
+    sudo cp "$built_so" "$original"
+
+    msg_ok "plasma-workspace autoswitcher patch installed."
+}
+
+remove_patches() {
+    local removed_count=0
+
+    # Remove plasma-integration patch (rebuild from clean source)
+    if ! command -v cmake &>/dev/null || ! command -v make &>/dev/null || ! command -v git &>/dev/null; then
+        warn "Cannot rebuild plasma-integration without build tools (cmake, make, git). Skipping."
+    else
+        _spinner_start "Restoring original plasma-integration..."
+        local src_dir="${PATCH_BUILD_DIR}/plasma-integration"
+        rm -rf "$src_dir"
+        mkdir -p "$(dirname "$src_dir")"
+        if git clone --depth 1 https://invent.kde.org/plasma/plasma-integration.git "$src_dir" 2>/dev/null; then
+            if (
+                cd "$src_dir" || exit 1
+                mkdir -p build && cd build || exit 1
+                cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_QT5=OFF -DBUILD_QT6=ON >/dev/null 2>&1 || exit 1
+                make -j"$(nproc)" >/dev/null 2>&1 || exit 1
+            ); then
+                _spinner_stop
+                sudo make -C "${src_dir}/build" install >/dev/null 2>&1
+                (( removed_count++ )) || true
+            else
+                _spinner_stop
+                warn "Failed to rebuild plasma-integration. The patched version remains."
+            fi
+        else
+            _spinner_stop
+            warn "Failed to clone plasma-integration. The patched version remains."
+        fi
+    fi
+
+    # Remove plasma-workspace autoswitcher patch (restore backup)
+    local restored=false
+    for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+        local backup="${install_dir}/lookandfeelautoswitcher.so.gloam-orig"
+        if [[ -f "$backup" ]]; then
+            sudo cp "$backup" "${install_dir}/lookandfeelautoswitcher.so"
+            sudo rm "$backup"
+            restored=true
+            break
+        fi
+    done
+
+    if [[ "$restored" == false ]]; then
+        # No backup — rebuild the unpatched module from downloaded sources
+        if ! command -v cmake &>/dev/null || ! command -v make &>/dev/null || ! command -v curl &>/dev/null; then
+            warn "Cannot rebuild plasma-workspace autoswitcher without build tools. Skipping."
+        else
+            local standalone_dir="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-autoswitcher"
+            if [[ ! -f "${standalone_dir}/CMakeLists.txt" ]]; then
+                warn "Standalone build files not found. Cannot rebuild. The patched version remains."
+            else
+                _spinner_start "Restoring original plasma-workspace autoswitcher..."
+                local build_dir="${PATCH_BUILD_DIR}/plasma-workspace-autoswitcher-clean"
+                rm -rf "$build_dir"
+                mkdir -p "$build_dir"
+
+                local base_url="https://invent.kde.org/plasma/plasma-workspace/-/raw/master"
+                local kded_path="kcms/lookandfeel/kded"
+                local ok=true
+                for f in "${kded_path}/lookandfeelautoswitcher.cpp" "${kded_path}/lookandfeelautoswitcher.h" \
+                         "${kded_path}/idletimeout.cpp" "${kded_path}/idletimeout.h" \
+                         "${kded_path}/lookandfeelautoswitcher.json" "${kded_path}/lookandfeelautoswitcherstate.kcfg" \
+                         "kcms/lookandfeel/lookandfeelsettings.kcfg"; do
+                    curl -fsSL "${base_url}/${f}" -o "${build_dir}/$(basename "$f")" 2>/dev/null || { ok=false; break; }
+                done
+
+                if [[ "$ok" == true ]]; then
+                    cp "${standalone_dir}/CMakeLists.txt" "$build_dir/"
+                    if (
+                        cd "$build_dir" || exit 1
+                        mkdir -p build && cd build || exit 1
+                        cmake .. -DCMAKE_INSTALL_PREFIX=/usr >/dev/null 2>&1 || exit 1
+                        make -j"$(nproc)" >/dev/null 2>&1 || exit 1
+                    ); then
+                        _spinner_stop
+                        local built_so
+                        built_so=$(find "${build_dir}/build" -name "lookandfeelautoswitcher.so" 2>/dev/null | head -1)
+                        if [[ -n "$built_so" ]]; then
+                            for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+                                [[ -d "$install_dir" ]] && { sudo cp "$built_so" "${install_dir}/lookandfeelautoswitcher.so"; break; }
+                            done
+                        fi
+                    else
+                        _spinner_stop
+                        warn "Failed to rebuild plasma-workspace autoswitcher. The patched version remains."
+                    fi
+                else
+                    _spinner_stop
+                    warn "Failed to download source files. The patched version remains."
+                fi
+            fi
+        fi
+    fi
+    (( removed_count++ )) || true
+
+    # Clean up build cache
+    rm -rf "$PATCH_BUILD_DIR"
+
+    return $(( removed_count == 0 ))
+}
+
+check_patches() {
+    local missing_patches=()
+
+    if ! is_patch_plasma_integration_installed; then
+        missing_patches+=("plasma-integration")
+    fi
+    if ! is_patch_plasma_workspace_installed; then
+        missing_patches+=("plasma-workspace")
+    fi
+
+    [[ ${#missing_patches[@]} -eq 0 ]] && return 0
+
+    # Import mode: install without prompting
+    if [[ -n "${IMPORT_CONFIG:-}" ]]; then
+        msg_header "Plasma Patches"
+        sudo_auth || die "Sudo required to install patches."
+        for p in "${missing_patches[@]}"; do
+            case "$p" in
+                plasma-integration)
+                    msg_info "  Patching plasma-integration..."
+                    install_patch_plasma_integration || warn "plasma-integration patch failed. Continuing."
+                    ;;
+                plasma-workspace)
+                    msg_info "  Patching plasma-workspace..."
+                    install_patch_plasma_workspace || warn "plasma-workspace patch failed. Continuing."
+                    ;;
+            esac
+        done
+        msg_ok "Plasma patches installed."
+        return 0
+    fi
+
+    # Interactive mode
+    msg_header "Plasma Patches"
+
+    gum style \
+        --foreground "$CLR_WARNING" \
+        --padding "0 2" \
+        "gloam requires two source patches applied to Plasma:"
+
+    echo ""
+
+    for p in "${missing_patches[@]}"; do
+        case "$p" in
+            plasma-integration)
+                gum style --foreground "$CLR_ERROR" "  ✗ plasma-integration — Qt App Theme Refresh"
+                msg_muted "    Without this patch, Qt apps (Dolphin, Kate, etc.) must be"
+                msg_muted "    restarted to pick up theme changes. The patch adds a DBus"
+                msg_muted "    signal handler that forces an immediate style refresh."
+                echo ""
+                ;;
+            plasma-workspace)
+                gum style --foreground "$CLR_ERROR" "  ✗ plasma-workspace — Autoswitcher Override Fix"
+                msg_muted "    Plasma re-applies the day/night theme whenever your location"
+                msg_muted "    is polled, overriding any manual toggle. The patch changes"
+                msg_muted "    schedule refreshes to only update the timer, not the theme."
+                echo ""
+                ;;
+        esac
+    done
+
+    if is_patch_plasma_integration_installed; then
+        gum style --foreground "$CLR_SUCCESS" "  ✓ plasma-integration — already installed"
+        echo ""
+    fi
+    if is_patch_plasma_workspace_installed; then
+        gum style --foreground "$CLR_SUCCESS" "  ✓ plasma-workspace — already installed"
+        echo ""
+    fi
+
+    msg_muted "Both patches require cloning and building Plasma components from source."
+    echo ""
+
+    if ! _gum_confirm "Install patches and continue?"; then
+        msg_muted "Aborted."
+        exit 0
+    fi
+
+    sudo_auth || die "Sudo required to install patches."
+    for p in "${missing_patches[@]}"; do
+        case "$p" in
+            plasma-integration) install_patch_plasma_integration || warn "plasma-integration patch failed. Continuing." ;;
+            plasma-workspace)   install_patch_plasma_workspace || warn "plasma-workspace patch failed. Continuing." ;;
+        esac
+    done
 }
 
 get_laf() {
@@ -2771,8 +3173,10 @@ do_configure() {
         "  gloam modifies Plasma theme settings, system configs, and user files." \
         "  It is recommended to back up your system before proceeding." \
         "  The authors are not responsible for any system issues."
-    echo ""
     _gum_confirm "Continue?" || { msg_muted "Aborted."; exit 0; }
+
+    # Check for recommended Plasma patches
+    check_patches
 
     # Handle config import - source the file and skip all interactive questions
     if [[ -n "${IMPORT_CONFIG}" ]]; then
@@ -2782,7 +3186,7 @@ do_configure() {
         if ! check_config_valid "$IMPORT_CONFIG"; then
             die "Imported config is outdated or incompatible. It may be from a different version of gloam."
         fi
-        echo ""
+        msg_header "Configuration"
         _spinner_start "Importing configuration from ${IMPORT_CONFIG}..."
         # shellcheck source=/dev/null
         source "$IMPORT_CONFIG"
@@ -3696,22 +4100,6 @@ WantedBy=default.target"
     # Write global installation marker
     write_global_install_marker
 
-    # Check if plasma-qt-forcerefresh patch is installed
-    local is_patched=""
-    is_patched=$(nm -C /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so 2>/dev/null | grep "forceStyleRefresh" || true)
-
-    if [[ -z "$is_patched" ]]; then
-        # Check secondary path just in case
-        is_patched=$(nm -C /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so 2>/dev/null | grep "forceStyleRefresh" || true)
-    fi
-
-    if [[ -z "$is_patched" ]] && command -v nm &>/dev/null; then
-        echo ""
-        warn "Standard Qt apps (Dolphin, Kate, etc.) require a patch to refresh themes without restarting."
-        msg_muted "If you want seamless live-switching, install the forcerefresh patch:"
-        msg_muted "  git clone https://github.com/edmogeor/plasma-qt-forcerefresh.git"
-        msg_muted "  cd plasma-qt-forcerefresh && ./plasma-integration-patch-manager.sh install"
-    fi
 }
 
 do_remove() {
@@ -3967,6 +4355,12 @@ do_remove() {
 
     systemctl --user daemon-reload
     _spinner_stop
+
+    # Remove Plasma patches
+    if remove_patches; then
+        _remove_print "Plasma patches"
+    fi
+
     echo ""
     if (( _removed_count > 0 )); then
         msg_ok "Remove complete."
