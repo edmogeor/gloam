@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0] - 2026-02-11
+
+### Added
+- Plasma patch build/install/remove infrastructure (`gloam configure --patches`)
+  - **plasma-integration**: adds a DBus `forceRefresh` signal handler so Qt apps reload styles without restarting
+  - **plasma-workspace**: prevents the LookAndFeelAutoSwitcher from overriding manual light/dark toggles on GeoClue schedule refreshes
+  - Patches are built from source, detected via `nm` symbol check, and cleanly removed by `gloam remove`
+- Logout prompt after installing patches, widget, or shortcut
+
+### Fixed
+- Systemd service crash loop: `Type=notify` with a silently failing `systemd-notify` caused systemd to kill gloam every 90 seconds, re-applying the schedule theme on each restart and overriding manual toggles (now uses `Type=simple`)
+- Patch builds use proper `.patch` files instead of fragile sed-based inline patching
+- Patch install uses atomic `cp` + `mv` to avoid partial writes
+- Patch removal correctly detects installed patches for sudo elevation
+- Patch source pinned to installed Plasma version tag to avoid ABI mismatches
+- Backup `.gloam-orig` files refreshed when Plasma updates overwrite patched files
+- `deploy_patches_dir` returns clean exit codes and only runs for global installs
+
 ## [1.1.2] - 2026-02-10
 
 ### Changed
@@ -8,7 +26,7 @@
 ### Fixed
 - Theme now applies before session restore so windows start with correct theme
 - Service runs immediately after KWin starts using `After=plasma-kwin_wayland.service`
-- Uses `Type=notify` with `systemd-notify --ready` to block session restore until theme is applied
+- Uses `Type=notify` with `systemd-notify --ready` to block session restore until theme is applied (reverted in v1.2.0)
 - Respect auto mode setting on login — only switch themes based on day/night cycle if auto mode is enabled
 
 ## [1.1.1] - 2026-02-10

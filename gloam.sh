@@ -49,7 +49,7 @@ BLUE='\033[38;5;99m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.1.2"
+GLOAM_VERSION="1.2.0"
 GLOAM_REPO="edmogeor/gloam"
 
 
