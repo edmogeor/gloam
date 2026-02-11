@@ -62,7 +62,7 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 - **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
 - [`gum`](https://github.com/charmbracelet/gum): Required for styled terminal UI (prompts, spinners, menus).
 - `nm` (part of `binutils`): Required for detecting and verifying installed Plasma patches.
-- **Build tools** (`cmake`, `make`, `patch`, `git`, `curl`): Required for building the Plasma patches. The installer will offer to install these if missing.
+- **Build tools** (`cmake`, `make`, `patch`, `git`, `curl`): Required for building the Plasma patches.
 
 
 ### Plasma Patches
