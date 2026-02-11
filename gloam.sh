@@ -296,6 +296,19 @@ msg_muted() {
 # Resolve script directory once (before any cd can change cwd)
 GLOAM_SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
 
+# Get patches directory (script location for local, /usr/local/share/gloam for global)
+get_patches_dir() {
+    local local_patches="${GLOAM_SCRIPT_DIR}/patches"
+    local global_patches="${GLOBAL_SCRIPTS_DIR}/patches"
+    if [[ -d "$local_patches" ]]; then
+        echo "$local_patches"
+    elif [[ -d "$global_patches" ]]; then
+        echo "$global_patches"
+    else
+        return 1
+    fi
+}
+
 # Base paths (may be overridden by global install)
 KVANTUM_DIR="${HOME}/.config/Kvantum"
 CONFIG_FILE="${HOME}/.config/gloam.conf"
@@ -415,6 +428,15 @@ install_cli_binary() {
         gloam_cmd cp "$0" "$cli_path"
     fi
     gloam_cmd chmod 755 "$cli_path"
+}
+
+# Copy patches directory for global installs
+install_patches_dir() {
+    [[ "$INSTALL_GLOBAL" != true ]] && return
+    local src_patches="${GLOAM_SCRIPT_DIR}/patches"
+    [[ -d "$src_patches" ]] || return
+    sudo mkdir -p "${GLOBAL_SCRIPTS_DIR}"
+    sudo cp -r "$src_patches" "${GLOBAL_SCRIPTS_DIR}/"
 }
 
 # --- UPDATE LOGIC -------------------------------------------------------------
@@ -1539,10 +1561,7 @@ get_pkg_name() {
         gum)
             echo "gum" ;;
         cmake)
-            case "$mgr" in
-                apt) echo "cmake" ;;
-                *)   echo "cmake" ;;
-            esac ;;
+            echo "cmake" ;;
         make)
             case "$mgr" in
                 apt)    echo "build-essential" ;;
@@ -1553,12 +1572,7 @@ get_pkg_name() {
         patch)
             echo "patch" ;;
         nm)
-            case "$mgr" in
-                apt)    echo "binutils" ;;
-                dnf)    echo "binutils" ;;
-                zypper) echo "binutils" ;;
-                *)      echo "binutils" ;;
-            esac ;;
+            echo "binutils" ;;
         *)
             echo "$pkg" ;;
     esac
@@ -1594,7 +1608,7 @@ check_dependencies() {
 
     # Non-KDE dependencies — offer to install
     # Format: "command:package-name"
-    local deps=("gum:gum" "cmake:cmake" "make:make" "patch:patch" "git:git" "curl:curl")
+    local deps=("gum:gum" "cmake:cmake" "make:make" "patch:patch" "git:git" "curl:curl" "nm:nm")
     local missing_cmds=()
     local missing_pkgs=()
 
@@ -1668,29 +1682,67 @@ is_patch_plasma_integration_installed() {
     local so_file
     for so_file in /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so \
                    /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so; do
-        if [[ -f "$so_file" ]] && nm -C "$so_file" 2>/dev/null | grep "forceStyleRefresh" > /dev/null; then
-            return 0
-        fi
+        [[ -f "$so_file" ]] && nm -C "$so_file" 2>/dev/null | grep -q "forceStyleRefresh" && return 0
     done
     return 1
 }
 
 # Detect if the plasma-workspace autoswitcher patch is installed
 is_patch_plasma_workspace_installed() {
-    # Check for backup of original .so (means our patched version is in place)
+    command -v nm &>/dev/null || return 1
+    local so_file
+    for so_file in /usr/lib/qt6/plugins/kf6/kded/lookandfeelautoswitcher.so \
+                   /usr/lib64/qt6/plugins/kf6/kded/lookandfeelautoswitcher.so; do
+        [[ -f "$so_file" ]] && nm -C "$so_file" 2>/dev/null | grep -q "gloam_autoswitcher_patched" && return 0
+    done
+    return 1
+}
+
+# Download autoswitcher source files from plasma-workspace repo
+_download_autoswitcher_sources() {
+    local dest_dir="$1"
+    local base_url="https://invent.kde.org/plasma/plasma-workspace/-/raw/master"
+    local kded="kcms/lookandfeel/kded"
+    local files=(
+        "${kded}/lookandfeelautoswitcher.cpp" "${kded}/lookandfeelautoswitcher.h"
+        "${kded}/idletimeout.cpp" "${kded}/idletimeout.h"
+        "${kded}/lookandfeelautoswitcher.json" "${kded}/lookandfeelautoswitcherstate.kcfg"
+        "kcms/lookandfeel/lookandfeelsettings.kcfg"
+    )
+    for f in "${files[@]}"; do
+        curl -fsSL "${base_url}/${f}" -o "${dest_dir}/$(basename "$f")" 2>/dev/null || return 1
+    done
+}
+
+# Find KDED plugin directory
+_get_kded_plugin_dir() {
     for candidate in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
-        [[ -f "${candidate}/lookandfeelautoswitcher.so.gloam-orig" ]] && return 0
+        [[ -d "$candidate" ]] && echo "$candidate" && return 0
+    done
+    return 1
+}
+
+# Find plasma-integration platformtheme plugin
+_get_plasma_integration_so() {
+    for candidate in /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so \
+                     /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so; do
+        [[ -f "$candidate" ]] && echo "$candidate" && return 0
     done
     return 1
 }
 
 install_patch_plasma_integration() {
-    local patch_file="${GLOAM_SCRIPT_DIR}/patches/plasma-integration-force-refresh.patch"
+    local patches_dir
+    patches_dir=$(get_patches_dir) || { error "Patches directory not found."; return 1; }
+    local patch_file="${patches_dir}/plasma-integration-force-refresh.patch"
     local src_dir="${PATCH_BUILD_DIR}/plasma-integration"
 
     [[ -f "$patch_file" ]] || { error "Patch file not found: $patch_file"; return 1; }
-    _spinner_start "Building plasma-integration with forceRefresh patch..."
 
+    local original_so
+    original_so=$(_get_plasma_integration_so) || { error "Could not find plasma-integration plugin."; return 1; }
+
+    _spinner_start "Building plasma-integration with forceRefresh patch (~ 4 mins)..."
     rm -rf "$src_dir"
     mkdir -p "$(dirname "$src_dir")"
     if ! git clone --depth 1 https://invent.kde.org/plasma/plasma-integration.git "$src_dir" 2>/dev/null; then
@@ -1699,7 +1751,6 @@ install_patch_plasma_integration() {
         return 1
     fi
 
-    # Build in a subshell to preserve working directory
     (
         cd "$src_dir" || exit 1
         patch -p1 < "$patch_file" >/dev/null 2>&1
@@ -1710,14 +1761,13 @@ install_patch_plasma_integration() {
     local build_rc=$?
     if [[ $build_rc -ne 0 ]]; then
         _spinner_stop
-        case $build_rc in
-            2) error "CMake configure failed. You may need to install build dependencies for plasma-integration." ;;
-            *) error "Build failed for plasma-integration." ;;
-        esac
+        [[ $build_rc -eq 2 ]] && error "CMake configure failed. You may need to install build dependencies for plasma-integration." || error "Build failed for plasma-integration."
         return 1
     fi
 
     _spinner_stop
+
+    [[ ! -f "${original_so}.gloam-orig" ]] && sudo cp "$original_so" "${original_so}.gloam-orig"
 
     msg_info "Installing plasma-integration (requires sudo)..."
     sudo make -C "${src_dir}/build" install >/dev/null 2>&1
@@ -1726,59 +1776,36 @@ install_patch_plasma_integration() {
 }
 
 install_patch_plasma_workspace() {
-    local patch_file="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-no-theme-on-schedule-refresh.patch"
-    local standalone_dir="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-autoswitcher"
+    local patches_dir
+    patches_dir=$(get_patches_dir) || { error "Patches directory not found."; return 1; }
+    local standalone_dir="${patches_dir}/plasma-workspace-autoswitcher"
     local build_dir="${PATCH_BUILD_DIR}/plasma-workspace-autoswitcher"
 
-    [[ -f "$patch_file" ]] || { error "Patch file not found: $patch_file"; return 1; }
     [[ -f "${standalone_dir}/CMakeLists.txt" ]] || { error "Standalone build files not found: $standalone_dir"; return 1; }
 
-    _spinner_start "Building plasma-workspace autoswitcher patch..."
-
+    _spinner_start "Building plasma-workspace autoswitcher patch (~ 1 min)..."
     rm -rf "$build_dir"
     mkdir -p "$build_dir"
 
-    # Fetch only the source files we need from the KDED module
-    local base_url="https://invent.kde.org/plasma/plasma-workspace/-/raw/master"
-    local kded_path="kcms/lookandfeel/kded"
-    local kcfg_path="kcms/lookandfeel"
-    local files=(
-        "${kded_path}/lookandfeelautoswitcher.cpp"
-        "${kded_path}/lookandfeelautoswitcher.h"
-        "${kded_path}/idletimeout.cpp"
-        "${kded_path}/idletimeout.h"
-        "${kded_path}/lookandfeelautoswitcher.json"
-        "${kded_path}/lookandfeelautoswitcherstate.kcfg"
-        "${kcfg_path}/lookandfeelsettings.kcfg"
-    )
+    if ! _download_autoswitcher_sources "$build_dir"; then
+        _spinner_stop
+        error "Failed to download source files."
+        return 1
+    fi
 
-    for f in "${files[@]}"; do
-        local dest="${build_dir}/$(basename "$f")"
-        if ! curl -fsSL "${base_url}/${f}" -o "$dest" 2>/dev/null; then
-            _spinner_stop
-            error "Failed to download: $f"
-            return 1
-        fi
-    done
-
-    # Copy the standalone CMakeLists.txt
     cp "${standalone_dir}/CMakeLists.txt" "$build_dir/"
 
-    # Apply the patch: in the scheduleChanged lambda, replace
-    # rescheduleAndUpdateAuto() with reschedule() so that schedule
-    # refreshes (e.g. from GeoClue) only update the timer, not the theme.
-    # We target the specific instance after m_state->save() in the lambda,
-    # leaving the timer connection and function definition untouched.
     if ! grep -q 'm_state->save' "${build_dir}/lookandfeelautoswitcher.cpp"; then
         _spinner_stop
         error "Source file does not match expected layout. Upstream may have changed."
         return 1
     fi
 
-    # Build in a subshell to preserve working directory
     (
         cd "$build_dir" || exit 1
         sed -i '/m_state->save/{n;n;s/rescheduleAndUpdateAuto/reschedule/}' lookandfeelautoswitcher.cpp
+        # Inject a marker symbol so nm can detect the patched build
+        echo 'extern "C" { int gloam_autoswitcher_patched = 1; }' >> lookandfeelautoswitcher.cpp
         mkdir -p build && cd build || exit 1
         cmake .. -DCMAKE_INSTALL_PREFIX=/usr >/dev/null 2>&1 || exit 2
         make -j"$(nproc)" >/dev/null 2>&1 || exit 3
@@ -1786,41 +1813,24 @@ install_patch_plasma_workspace() {
     local build_rc=$?
     if [[ $build_rc -ne 0 ]]; then
         _spinner_stop
-        case $build_rc in
-            2) error "CMake configure failed for autoswitcher module. Check build dependencies." ;;
-            *) error "Build failed for autoswitcher module." ;;
-        esac
+        [[ $build_rc -eq 2 ]] && error "CMake configure failed. Check build dependencies." || error "Build failed."
         return 1
     fi
 
     _spinner_stop
 
-    # Find the built .so
     local built_so
     built_so=$(find "${build_dir}/build" -name "lookandfeelautoswitcher.so" 2>/dev/null | head -1)
     if [[ -z "$built_so" ]]; then
-        error "Build produced no output: lookandfeelautoswitcher.so not found."
+        error "Build produced no output."
         return 1
     fi
 
-    # Find the install location
-    local install_dir=""
-    for candidate in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
-        if [[ -d "$candidate" ]]; then
-            install_dir="$candidate"
-            break
-        fi
-    done
-    if [[ -z "$install_dir" ]]; then
-        error "Could not find KDED plugin directory."
-        return 1
-    fi
+    local install_dir
+    install_dir=$(_get_kded_plugin_dir) || { error "Could not find KDED plugin directory."; return 1; }
 
-    # Back up the original before replacing
     local original="${install_dir}/lookandfeelautoswitcher.so"
-    if [[ -f "$original" && ! -f "${original}.gloam-orig" ]]; then
-        sudo cp "$original" "${original}.gloam-orig"
-    fi
+    [[ -f "$original" && ! -f "${original}.gloam-orig" ]] && sudo cp "$original" "${original}.gloam-orig"
 
     msg_info "Installing autoswitcher module (requires sudo)..."
     sudo cp "$built_so" "$original"
@@ -1831,100 +1841,80 @@ install_patch_plasma_workspace() {
 remove_patches() {
     local removed_count=0
 
-    # Remove plasma-integration patch (rebuild from clean source)
-    if ! command -v cmake &>/dev/null || ! command -v make &>/dev/null || ! command -v git &>/dev/null; then
-        warn "Cannot rebuild plasma-integration without build tools (cmake, make, git). Skipping."
-    else
-        _spinner_start "Restoring original plasma-integration..."
-        local src_dir="${PATCH_BUILD_DIR}/plasma-integration"
-        rm -rf "$src_dir"
-        mkdir -p "$(dirname "$src_dir")"
-        if git clone --depth 1 https://invent.kde.org/plasma/plasma-integration.git "$src_dir" 2>/dev/null; then
-            if (
-                cd "$src_dir" || exit 1
-                mkdir -p build && cd build || exit 1
-                cmake .. -DCMAKE_INSTALL_PREFIX=/usr -DBUILD_QT5=OFF -DBUILD_QT6=ON >/dev/null 2>&1 || exit 1
-                make -j"$(nproc)" >/dev/null 2>&1 || exit 1
-            ); then
-                _spinner_stop
-                sudo make -C "${src_dir}/build" install >/dev/null 2>&1
-                (( removed_count++ )) || true
-            else
-                _spinner_stop
-                warn "Failed to rebuild plasma-integration. The patched version remains."
-            fi
-        else
-            _spinner_stop
-            warn "Failed to clone plasma-integration. The patched version remains."
-        fi
+    # Remove plasma-integration patch (restore backup)
+    local integration_so
+    integration_so=$(_get_plasma_integration_so) || integration_so=""
+    if [[ -n "$integration_so" && -f "${integration_so}.gloam-orig" ]]; then
+        sudo cp "${integration_so}.gloam-orig" "$integration_so"
+        sudo rm "${integration_so}.gloam-orig"
+        (( removed_count++ )) || true
     fi
 
-    # Remove plasma-workspace autoswitcher patch (restore backup)
-    local restored=false
-    for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
-        local backup="${install_dir}/lookandfeelautoswitcher.so.gloam-orig"
-        if [[ -f "$backup" ]]; then
-            sudo cp "$backup" "${install_dir}/lookandfeelautoswitcher.so"
-            sudo rm "$backup"
-            restored=true
-            break
-        fi
-    done
+    # Remove plasma-workspace autoswitcher patch (restore backup or rebuild)
+    if is_patch_plasma_workspace_installed; then
+        # Try restoring from backup first
+        local ws_restored=false
+        local install_dir
+        for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+            local backup="${install_dir}/lookandfeelautoswitcher.so.gloam-orig"
+            if [[ -f "$backup" ]]; then
+                sudo cp "$backup" "${install_dir}/lookandfeelautoswitcher.so"
+                sudo rm "$backup"
+                (( removed_count++ )) || true
+                ws_restored=true
+                break
+            fi
+        done
 
-    if [[ "$restored" == false ]]; then
-        # No backup — rebuild the unpatched module from downloaded sources
-        if ! command -v cmake &>/dev/null || ! command -v make &>/dev/null || ! command -v curl &>/dev/null; then
-            warn "Cannot rebuild plasma-workspace autoswitcher without build tools. Skipping."
-        else
-            local standalone_dir="${GLOAM_SCRIPT_DIR}/patches/plasma-workspace-autoswitcher"
-            if [[ ! -f "${standalone_dir}/CMakeLists.txt" ]]; then
-                warn "Standalone build files not found. Cannot rebuild. The patched version remains."
-            else
-                _spinner_start "Restoring original plasma-workspace autoswitcher..."
-                local build_dir="${PATCH_BUILD_DIR}/plasma-workspace-autoswitcher-clean"
-                rm -rf "$build_dir"
-                mkdir -p "$build_dir"
+        # If no backup found, rebuild unpatched module from source
+        if [[ "$ws_restored" != true ]]; then
+            if command -v cmake &>/dev/null && command -v make &>/dev/null && command -v curl &>/dev/null; then
+                local patches_dir
+                patches_dir=$(get_patches_dir) || { warn "Patches directory not found. Cannot rebuild."; return $(( removed_count == 0 )); }
+                local standalone_dir="${patches_dir}/plasma-workspace-autoswitcher"
+                if [[ -f "${standalone_dir}/CMakeLists.txt" ]]; then
+                    _spinner_start "Restoring original plasma-workspace autoswitcher (~ 1 min)..."
+                    local build_dir="${PATCH_BUILD_DIR}/plasma-workspace-autoswitcher-clean"
+                    rm -rf "$build_dir"
+                    mkdir -p "$build_dir"
 
-                local base_url="https://invent.kde.org/plasma/plasma-workspace/-/raw/master"
-                local kded_path="kcms/lookandfeel/kded"
-                local ok=true
-                for f in "${kded_path}/lookandfeelautoswitcher.cpp" "${kded_path}/lookandfeelautoswitcher.h" \
-                         "${kded_path}/idletimeout.cpp" "${kded_path}/idletimeout.h" \
-                         "${kded_path}/lookandfeelautoswitcher.json" "${kded_path}/lookandfeelautoswitcherstate.kcfg" \
-                         "kcms/lookandfeel/lookandfeelsettings.kcfg"; do
-                    curl -fsSL "${base_url}/${f}" -o "${build_dir}/$(basename "$f")" 2>/dev/null || { ok=false; break; }
-                done
-
-                if [[ "$ok" == true ]]; then
-                    cp "${standalone_dir}/CMakeLists.txt" "$build_dir/"
-                    if (
-                        cd "$build_dir" || exit 1
-                        mkdir -p build && cd build || exit 1
-                        cmake .. -DCMAKE_INSTALL_PREFIX=/usr >/dev/null 2>&1 || exit 1
-                        make -j"$(nproc)" >/dev/null 2>&1 || exit 1
-                    ); then
-                        _spinner_stop
-                        local built_so
-                        built_so=$(find "${build_dir}/build" -name "lookandfeelautoswitcher.so" 2>/dev/null | head -1)
-                        if [[ -n "$built_so" ]]; then
-                            for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
-                                [[ -d "$install_dir" ]] && { sudo cp "$built_so" "${install_dir}/lookandfeelautoswitcher.so"; break; }
-                            done
+                    if _download_autoswitcher_sources "$build_dir"; then
+                        cp "${standalone_dir}/CMakeLists.txt" "$build_dir/"
+                        if (
+                            cd "$build_dir" || exit 1
+                            mkdir -p build && cd build || exit 1
+                            cmake .. -DCMAKE_INSTALL_PREFIX=/usr >/dev/null 2>&1 || exit 1
+                            make -j"$(nproc)" >/dev/null 2>&1 || exit 1
+                        ); then
+                            _spinner_stop
+                            local built_so
+                            built_so=$(find "${build_dir}/build" -name "lookandfeelautoswitcher.so" 2>/dev/null | head -1)
+                            if [[ -n "$built_so" ]]; then
+                                install_dir=$(_get_kded_plugin_dir) && sudo cp "$built_so" "${install_dir}/lookandfeelautoswitcher.so"
+                                (( removed_count++ )) || true
+                            fi
+                        else
+                            _spinner_stop
+                            warn "Failed to rebuild plasma-workspace autoswitcher. The patched version remains."
                         fi
                     else
                         _spinner_stop
-                        warn "Failed to rebuild plasma-workspace autoswitcher. The patched version remains."
+                        warn "Failed to download source files. The patched version remains."
                     fi
                 else
-                    _spinner_stop
-                    warn "Failed to download source files. The patched version remains."
+                    warn "Standalone build files not found. Cannot rebuild."
                 fi
+            else
+                warn "Cannot rebuild plasma-workspace autoswitcher without build tools."
             fi
         fi
     fi
-    (( removed_count++ )) || true
 
-    # Clean up build cache
+    # Clean up backup file if present (e.g. leftover after system update replaced the .so)
+    for install_dir in /usr/lib/qt6/plugins/kf6/kded /usr/lib64/qt6/plugins/kf6/kded; do
+        [[ -f "${install_dir}/lookandfeelautoswitcher.so.gloam-orig" ]] && sudo rm "${install_dir}/lookandfeelautoswitcher.so.gloam-orig"
+    done
+
     rm -rf "$PATCH_BUILD_DIR"
 
     return $(( removed_count == 0 ))
@@ -2001,6 +1991,7 @@ check_patches() {
     fi
 
     msg_muted "Both patches require cloning and building Plasma components from source."
+    msg_muted "Note: You'll need to re-run 'gloam configure --patches' after Plasma updates."
     echo ""
 
     if ! _gum_confirm "Install patches and continue?"; then
@@ -2015,6 +2006,10 @@ check_patches() {
             plasma-workspace)   install_patch_plasma_workspace || warn "plasma-workspace patch failed. Continuing." ;;
         esac
     done
+
+    echo ""
+    msg_warn "Plasma updates will overwrite these patches."
+    msg_muted "Re-run 'gloam configure --patches' after updating Plasma."
 }
 
 get_laf() {
@@ -3106,6 +3101,7 @@ do_configure() {
     local configure_shortcut=false
     local configure_appstyle=false
     local configure_wallpaper=false
+    local configure_patches=false
     local IMPORT_CONFIG=""
     local IMPORT_REQUESTED=false
     local EXPORT_REQUESTED=false
@@ -3128,12 +3124,13 @@ do_configure() {
             -C|--cursors)       configure_cursors=true; configure_all=false ;;
             -w|--widget)        configure_widget=true; configure_all=false ;;
             -K|--shortcut)      configure_shortcut=true; configure_all=false ;;
+            -P|--patches)       configure_patches=true; configure_all=false ;;
             -I|--import)        if [[ $# -gt 1 && ! "$2" =~ ^- ]]; then IMPORT_CONFIG="$2"; shift; fi; IMPORT_REQUESTED=true ;;
             -e|--export)        EXPORT_REQUESTED=true ;;
             help|-h|--help)     show_configure_help; exit 0 ;;
             *)
                 error "Unknown option: $1"
-                msg_muted "Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut -I|--import <file> -e|--export <dir>"
+                msg_muted "Options: -c|--colors -k|--kvantum -a|--appstyle -g|--gtk -p|--style -d|--decorations -i|--icons -C|--cursors -S|--splash -l|--login -W|--wallpaper -o|--konsole -s|--script -w|--widget -K|--shortcut -P|--patches -I|--import <file> -e|--export <dir>"
                 exit 1
                 ;;
         esac
@@ -3154,6 +3151,28 @@ do_configure() {
         fi
         cp "$CONFIG_FILE" "${EXPORT_DIR}/gloam.conf"
         msg_ok "Config exported to ${EXPORT_DIR}/gloam.conf"
+        exit 0
+    fi
+
+    # Handle --patches: only install/reinstall Plasma patches
+    if [[ "$configure_patches" == true ]]; then
+        sudo_auth || die "Sudo required to install patches."
+        local patches=()
+        is_patch_plasma_integration_installed || patches+=("plasma-integration")
+        is_patch_plasma_workspace_installed || patches+=("plasma-workspace")
+        if [[ ${#patches[@]} -eq 0 ]]; then
+            msg_ok "All Plasma patches already installed."
+        else
+            for p in "${patches[@]}"; do
+                case "$p" in
+                    plasma-integration) install_patch_plasma_integration || warn "plasma-integration patch failed." ;;
+                    plasma-workspace)   install_patch_plasma_workspace || warn "plasma-workspace patch failed." ;;
+                esac
+            done
+        fi
+        echo ""
+        msg_warn "Plasma updates will overwrite these patches."
+        msg_muted "Re-run 'gloam configure --patches' after updating Plasma."
         exit 0
     fi
 
@@ -4028,6 +4047,7 @@ EOF
         if _gum_confirm "$install_cli_prompt"; then
             INSTALL_CLI=true
             install_cli_binary
+            install_patches_dir
             executable_path="$cli_path"
             msg_ok "Installed to $cli_path"
 
@@ -4138,6 +4158,8 @@ do_remove() {
 
         msg_info "Requesting sudo..."
         sudo_auth || die "Sudo required to remove global files."
+    else
+        echo ""
     fi
 
     _spinner_start "Removing gloam..."
@@ -4577,6 +4599,7 @@ show_configure_help() {
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-s, --script")        Configure custom scripts only"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-w, --widget")        Install/reinstall panel widget"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-K, --shortcut")      Install/reinstall keyboard shortcut (Meta+Shift+L)"
+    echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-P, --patches")      Install/reinstall Plasma patches"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-I, --import") $(gum style --foreground "$CLR_MUTED" "<file>")   Import an existing gloam.conf and skip interactive setup"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" -- "-e, --export") $(gum style --foreground "$CLR_MUTED" "<dir>")    Export current gloam.conf to a directory"
     echo ""
@@ -4594,6 +4617,7 @@ show_configure_help() {
     echo "                                Export config for use on another machine/user"
     echo "  $(gum style --bold "gloam configure --import") $(gum style --foreground "$CLR_MUTED" "/path/to/gloam.conf")"
     echo "                                Import config from another machine/user"
+    echo "  $(gum style --bold "gloam configure --patches")   Reinstall Plasma patches after system update"
 }
 
 show_banner() {

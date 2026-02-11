@@ -74,6 +74,8 @@ During configuration, gloam builds and installs two source patches that fix limi
 
 Both patches are built from source during `gloam configure` and are cleanly removed by `gloam remove`.
 
+> **Note:** Plasma updates will overwrite these patches. Re-run `gloam configure --patches` after updating Plasma to reinstall them.
+
 ### Flatpak Notes
 
 When you configure GTK or Kvantum themes, the script automatically sets up Flatpak permissions to access theme directories. Themes and icons are applied via environment variable overrides (`GTK_THEME`, `GTK_ICON_THEME`, `QT_STYLE_OVERRIDE`).
@@ -127,6 +129,7 @@ gloam configure --konsole      # Konsole profiles
 gloam configure --script       # Custom scripts
 gloam configure --widget       # Panel widget
 gloam configure --shortcut     # Keyboard shortcut
+gloam configure --patches      # Plasma patches (reinstall after Plasma updates)
 ```
 
 ### Config Export & Import
