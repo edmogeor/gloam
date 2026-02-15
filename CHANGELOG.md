@@ -5,8 +5,10 @@
 ### Added
 - Plasma patch build/install/remove infrastructure (`gloam configure --patches`)
   - **plasma-integration**: adds a DBus `forceRefresh` signal handler so Qt apps reload styles without restarting
-  - **plasma-workspace**: prevents the LookAndFeelAutoSwitcher from overriding manual light/dark toggles on GeoClue schedule refreshes
-  - Patches are built from source, detected via `nm` symbol check, and cleanly removed by `gloam remove`
+  - Patch is built from source, detected via `nm` symbol check, and cleanly removed by `gloam remove`
+
+### Removed
+- **plasma-workspace** autoswitcher override patch
 - Logout prompt after installing patches, widget, or shortcut
 
 ### Fixed

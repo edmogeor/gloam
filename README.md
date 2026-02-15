@@ -61,21 +61,19 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 
 - **KDE Plasma 6** (uses `kreadconfig6`/`kwriteconfig6`)
 - [`gum`](https://github.com/charmbracelet/gum): Required for styled terminal UI (prompts, spinners, menus).
-- `nm` (part of `binutils`): Required for detecting and verifying installed Plasma patches.
-- **Build tools** (`cmake`, `make`, `patch`, `git`, `curl`): Required for building the Plasma patches.
+- `nm` (part of `binutils`): Required for detecting and verifying the installed Plasma patch.
+- **Build tools** (`cmake`, `make`, `patch`, `git`, `curl`): Required for building the Plasma patch.
 
 
 ### Plasma Patches
 
-During configuration, gloam builds and installs two source patches that fix limitations in Plasma's live theme switching:
+During configuration, gloam builds and installs a source patch that fixes a limitation in Plasma's live theme switching:
 
 - **plasma-integration (Qt App Theme Refresh)** — Qt apps (Dolphin, Kate, etc.) don't refresh their styles when the colour scheme changes at runtime. This patch adds a DBus signal handler (`org.kde.KGlobalSettings.forceRefresh`) that forces an immediate style and palette reload in every running Qt app, without restarting them.
 
-- **plasma-workspace (Autoswitcher Override Fix)** — Plasma's `LookAndFeelAutoSwitcher` re-applies the day/night theme whenever KNightTime recalculates the schedule (e.g. after a GeoClue location poll), overriding any manual light/dark toggle. This patch changes schedule refreshes to only update the transition timer without touching the current theme, so manual toggles stick until the next real day/night boundary.
+The patch is built from source during `gloam configure` and is cleanly removed by `gloam remove`.
 
-Both patches are built from source during `gloam configure` and are cleanly removed by `gloam remove`.
-
-> **Note:** Plasma updates will overwrite these patches. Re-run `gloam configure --patches` after updating Plasma to reinstall them.
+> **Note:** Plasma updates will overwrite this patch. Re-run `gloam configure --patches` after updating Plasma to reinstall it.
 
 ### Flatpak Notes
 
