@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.1] - 2026-02-16
+
+### Added
+- **Auto Mode:** new `gloam auto` command switches to automatic day/night theme scheduling via KDE's KNightTime service
+- **OSD overlay:** on-screen display shows the current mode (Light, Dark, Auto) when switching via the panel widget, keyboard shortcut, or CLI commands
+- **Plasmoid auto state:** panel widget now cycles through Light, Dark, and Auto modes on click with a dedicated contrast icon for auto mode
+- **Right-click Auto Mode:** plasmoid context menu includes an "Auto Mode" option alongside Light Mode and Dark Mode
+
+### Changed
+- `gloam toggle` now cycles through Light → Dark → Auto instead of just toggling between Light and Dark
+- Keyboard shortcut (Meta+Shift+L) follows the same three-state cycle
+- Explicit `gloam light` / `gloam dark` commands now disable automatic mode (previously auto mode was silently preserved)
+
 ## [1.2.0] - 2026-02-11
 
 ### Added

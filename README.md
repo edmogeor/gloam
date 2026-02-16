@@ -15,7 +15,7 @@ cd gloam-* && ./gloam.sh configure
 
 ## Releases
 
-**Latest:** [v1.2.0](https://github.com/edmogeor/gloam/releases/tag/v1.2.0)
+**Latest:** [v1.2.1](https://github.com/edmogeor/gloam/releases/tag/v1.2.1)
 
 See the full [changelog](CHANGELOG.md) for details.
 
@@ -53,8 +53,10 @@ It can bundle your preferences into custom Plasma Global Themes (for native inte
 - **Konsole Profiles:** Switches Konsole profiles live for running instances and new windows.
 - **Custom Scripts:** Run arbitrary scripts when switching to light or dark mode.
 - **Systemd Service:** User-level systemd service watches for changes automatically.
-- **Panel Widget:** Optional Light/Dark Mode Toggle widget for your panel.
-- **Keyboard Shortcut:** Toggle with Meta+Shift+L (customizable in System Settings > Shortcuts).
+- **Auto Mode:** Switch between Light, Dark, and Auto (follows system day/night schedule based on sunrise/sunset).
+- **OSD Overlay:** On-screen display shows the current mode when switching via the panel widget, keyboard shortcut, or toggle command.
+- **Panel Widget:** Optional panel widget that cycles between Light, Dark, and Auto modes on click.
+- **Keyboard Shortcut:** Cycle modes with Meta+Shift+L (customizable in System Settings > Shortcuts).
 - **Global Installation:** Optionally install system-wide for all users, push config to existing users, and set defaults for new users.
 
 ## Requirements
@@ -161,7 +163,8 @@ Once configured, the service runs in the background. You usually don't need to t
 | `gloam status` | Show the service status and current theme configuration. |
 | `gloam light` | Switch to light mode (and sync all sub-themes). |
 | `gloam dark` | Switch to dark mode (and sync all sub-themes). |
-| `gloam toggle` | Toggle between light and dark modes (also via Meta+Shift+L). |
+| `gloam toggle` | Cycle between Light, Dark, and Auto modes (also via Meta+Shift+L). |
+| `gloam auto` | Switch to Auto mode (follow system day/night schedule). |
 | `gloam remove` | Stop the service and remove all installed files. |
 | `gloam update` | Check for and install the latest version. |
 | `gloam version` | Show the installed version. |

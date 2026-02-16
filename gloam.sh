@@ -49,7 +49,7 @@ BLUE='\033[38;5;99m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.2.0"
+GLOAM_VERSION="1.2.1"
 GLOAM_REPO="edmogeor/gloam"
 
 
@@ -2845,6 +2845,12 @@ prompt_logout_if_needed() {
 
 # --- CLI COMMANDS -------------------------------------------------------------
 
+show_osd() {
+    local icon="$1" text="$2"
+    qdbus org.freedesktop.Notifications /org/kde/osdService \
+        org.kde.osdService.showText "$icon" "$text" 2>/dev/null || true
+}
+
 # Switch to a specific mode: "light" or "dark"
 do_switch() {
     local mode="$1"
@@ -2855,33 +2861,87 @@ do_switch() {
     local icon label
     if [[ "$mode" == "light" ]]; then icon="☀️"; label="Light"; else icon="🌙"; label="Dark"; fi
 
-    # Save auto mode state before plasma-apply-lookandfeel disables it
-    local auto_mode
-    auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
-
     local friendly_name
     friendly_name=$(get_friendly_name laf "$laf")
     echo -e "Switching to ${icon} ${label} theme: ${BOLD}$friendly_name${RESET}"
     plasma-apply-lookandfeel -a "$laf" 2>/dev/null
 
-    # Restore auto mode if it was enabled
-    if [[ "$auto_mode" == "true" ]]; then
-        kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
-    fi
+    apply_theme "$laf"
+}
+
+do_light() { do_switch light; show_osd "weather-clear" "Light"; }
+do_dark()  { do_switch dark;  show_osd "weather-clear-night" "Dark"; }
+
+# Apply a theme while preserving AutomaticLookAndFeel (used by do_auto)
+do_switch_keep_auto() {
+    local mode="$1"
+    load_config_strict
+
+    local laf_var="LAF_${mode^^}"
+    local laf="${!laf_var}"
+
+    plasma-apply-lookandfeel -a "$laf" 2>/dev/null
+    kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
 
     apply_theme "$laf"
 }
 
-do_light() { do_switch light; }
-do_dark() { do_switch dark; }
+do_auto() {
+    load_config_strict
 
+    # Enable automatic theme switching
+    kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
+
+    # Determine correct theme for current time via KNightTime
+    local is_daylight=true
+    local subscribe_output
+    if subscribe_output=$(busctl --user call org.kde.NightTime /org/kde/NightTime/Manager \
+            org.kde.NightTime.Manager Subscribe 'a{sv}' 0 2>/dev/null); then
+        local cookie
+        cookie=$(echo "$subscribe_output" | grep -oP '(?<="Cookie" u )\d+')
+        local now_ms
+        now_ms=$(date +%s%3N)
+        local -a timestamps
+        read -ra timestamps <<< "$(echo "$subscribe_output" | sed 's/.*a(xxxxx) [0-9]* //')"
+        local i morning_end evening_end
+        for (( i=0; i < ${#timestamps[@]}; i+=5 )); do
+            morning_end=${timestamps[i+2]}
+            evening_end=${timestamps[i+4]}
+            if (( now_ms >= morning_end && now_ms < evening_end )); then
+                is_daylight=true
+                break
+            elif (( now_ms < morning_end )); then
+                is_daylight=false
+                break
+            elif (( now_ms >= evening_end )); then
+                is_daylight=false
+            fi
+        done
+        busctl --user call org.kde.NightTime /org/kde/NightTime/Manager \
+            org.kde.NightTime.Manager Unsubscribe u "${cookie:-0}" &>/dev/null
+    fi
+
+    echo -e "Switching to 🔄 Auto mode (following system day/night schedule)"
+    if [[ "$is_daylight" == "true" ]]; then
+        do_switch_keep_auto light
+    else
+        do_switch_keep_auto dark
+    fi
+    show_osd "contrast" "Auto"
+}
+
+# Cycle: light → dark → auto → light
 do_toggle() {
     load_config_strict
+    local auto_mode
+    auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
     local current_laf
     current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage)
 
-    if [[ "$current_laf" == "$LAF_DARK" ]]; then
+    if [[ "$auto_mode" == "true" ]]; then
         do_light
+    elif [[ "$current_laf" == "$LAF_DARK" ]]; then
+        do_auto
     else
         do_dark
     fi
@@ -4538,7 +4598,8 @@ show_help() {
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "watch")        Start the theme monitoring loop (foreground)"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "light")        Switch to Light mode (and sync sub-themes)"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "dark")         Switch to Dark mode (and sync sub-themes)"
-    echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "toggle")       Toggle between Light and Dark mode"
+    echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "toggle")       Cycle between Light, Dark, and Auto mode"
+    echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "auto")         Switch to Auto mode (follow system day/night schedule)"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "remove")       Stop service, remove all installed files and widget"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "status")       Show service status and current configuration"
     echo "  $(gum style --bold --foreground "$CLR_SECONDARY" "update")       Check for and install the latest version"
@@ -4554,7 +4615,7 @@ check_dependencies
 
 # Show banner only for interactive commands (--no-banner used by internal re-exec)
 case "${1:-}" in
-    watch|light|dark|toggle) ;;
+    watch|light|dark|toggle|auto) ;;
     --no-banner) shift ;;
     *) show_banner ;;
 esac
@@ -4565,6 +4626,7 @@ case "${1:-}" in
     light)     do_light ;;
     dark)      do_dark ;;
     toggle)    do_toggle ;;
+    auto)      do_auto ;;
     remove)    do_remove ;;
     status)    do_status ;;
     update)    do_update ;;

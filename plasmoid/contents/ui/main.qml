@@ -16,15 +16,18 @@ PlasmoidItem {
         var bg = Kirigami.Theme.backgroundColor
         return (bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114) < 0.5
     }
+    property bool isAutoMode: false
     property bool isRunning: false
 
     // Unlock as soon as the theme actually changes — no need to wait for
     // gloam's subsidiary operations (Kvantum, GTK, Konsole …) to finish.
     onIsDarkModeChanged: isRunning = false
 
-    Plasmoid.icon: isDarkMode ? "weather-clear-night" : "weather-clear"
-    toolTipMainText: isDarkMode ? "Dark Mode" : "Light Mode"
-    toolTipSubText: "Click to toggle"
+    Plasmoid.icon: isAutoMode ? "contrast"
+                 : isDarkMode ? "weather-clear-night"
+                 : "weather-clear"
+    toolTipMainText: isAutoMode ? "Auto Mode" : (isDarkMode ? "Dark Mode" : "Light Mode")
+    toolTipSubText: isAutoMode ? "Following system day/night schedule" : "Click to switch"
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -36,6 +39,11 @@ PlasmoidItem {
             text: "Dark Mode"
             icon.name: "weather-clear-night"
             onTriggered: root.runCommand("gloam dark")
+        },
+        PlasmaCore.Action {
+            text: "Auto Mode"
+            icon.name: "contrast"
+            onTriggered: root.runCommand("gloam auto")
         },
         PlasmaCore.Action {
             text: "Toggle"
@@ -56,8 +64,26 @@ PlasmoidItem {
         onNewData: (sourceName, data) => {
             root.isRunning = false
             disconnectSource(sourceName)
+            root.checkAutoMode()
         }
     }
+
+    Plasma5Support.DataSource {
+        id: autoModeChecker
+        engine: "executable"
+        connectedSources: []
+        onNewData: (sourceName, data) => {
+            root.isAutoMode = data["stdout"].toString().trim() === "true"
+            disconnectSource(sourceName)
+        }
+    }
+
+    function checkAutoMode() {
+        autoModeChecker.connectSource(
+            "kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel")
+    }
+
+    Component.onCompleted: checkAutoMode()
 
     // Safety timer to reset isRunning if command fails/hangs or the theme
     // doesn't actually change (e.g. already in the requested mode).
