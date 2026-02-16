@@ -12,22 +12,17 @@ import org.kde.kirigami as Kirigami
 PlasmoidItem {
     id: root
 
-    property bool isDarkMode: {
-        var bg = Kirigami.Theme.backgroundColor
-        return (bg.r * 0.299 + bg.g * 0.587 + bg.b * 0.114) < 0.5
-    }
-    property bool isAutoMode: false
-    property bool isRunning: false
+    property string mode: "light"
+    property bool busy: false
 
-    // Unlock as soon as the theme actually changes — no need to wait for
-    // gloam's subsidiary operations (Kvantum, GTK, Konsole …) to finish.
-    onIsDarkModeChanged: isRunning = false
+    readonly property string readModeCmd:
+        "cat \"${XDG_RUNTIME_DIR}/gloam-runtime\" 2>/dev/null || echo light"
 
-    Plasmoid.icon: isAutoMode ? "contrast"
-                 : isDarkMode ? "weather-clear-night"
+    Plasmoid.icon: mode === "auto" ? "contrast"
+                 : mode === "dark" ? "weather-clear-night"
                  : "weather-clear"
-    toolTipMainText: isAutoMode ? "Auto Mode" : (isDarkMode ? "Dark Mode" : "Light Mode")
-    toolTipSubText: isAutoMode ? "Following system day/night schedule" : "Click to switch"
+    toolTipMainText: mode === "auto" ? "Auto Mode" : (mode === "dark" ? "Dark Mode" : "Light Mode")
+    toolTipSubText: mode === "auto" ? "Following system day/night schedule" : "Click to switch"
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -57,68 +52,60 @@ PlasmoidItem {
 
     Plasmoid.onActivated: runCommand("gloam toggle")
 
+    // Reads the mode from gloam-runtime (tmpfs — negligible I/O)
     Plasma5Support.DataSource {
-        id: commandRunner
+        id: modeReader
         engine: "executable"
-        connectedSources: []
+        connectedSources: [root.readModeCmd]
+        interval: 1000
         onNewData: (sourceName, data) => {
-            root.isRunning = false
-            disconnectSource(sourceName)
-            root.checkAutoMode()
+            var result = data["stdout"].toString().trim()
+            if (result)
+                root.mode = result
         }
     }
 
+    // Runs gloam commands from plasmoid clicks/actions
     Plasma5Support.DataSource {
-        id: autoModeChecker
+        id: executable
         engine: "executable"
         connectedSources: []
         onNewData: (sourceName, data) => {
-            root.isAutoMode = data["stdout"].toString().trim() === "true"
             disconnectSource(sourceName)
+            root.busy = false
+            // Force immediate re-read after a gloam command
+            modeReader.disconnectSource(root.readModeCmd)
+            modeReader.connectSource(root.readModeCmd)
         }
-    }
-
-    function checkAutoMode() {
-        autoModeChecker.connectSource(
-            "kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel")
-    }
-
-    Component.onCompleted: checkAutoMode()
-
-    // Safety timer to reset isRunning if command fails/hangs or the theme
-    // doesn't actually change (e.g. already in the requested mode).
-    Timer {
-        interval: 3000
-        running: root.isRunning
-        repeat: false
-        onTriggered: root.isRunning = false
     }
 
     function runCommand(cmd) {
-        if (isRunning) return
-        isRunning = true
-        commandRunner.connectSource(cmd)
+        if (!busy) {
+            busy = true
+            executable.connectSource(cmd)
+        }
     }
 
     preferredRepresentation: fullRepresentation
     fullRepresentation: MouseArea {
         id: mouseArea
 
-        enabled: !root.isRunning
         hoverEnabled: true
         onClicked: root.runCommand("gloam toggle")
 
         Kirigami.Icon {
             source: Plasmoid.icon
             anchors.fill: parent
-            active: mouseArea.containsMouse && !root.isRunning
-            visible: !root.isRunning
+            active: mouseArea.containsMouse
+            visible: !root.busy
         }
 
         QQC2.BusyIndicator {
-            anchors.fill: parent
-            running: root.isRunning
-            visible: root.isRunning
+            anchors.centerIn: parent
+            width: Math.min(parent.width, parent.height) * 0.8
+            height: width
+            running: root.busy
+            visible: root.busy
         }
 
         PlasmaCore.ToolTipArea {

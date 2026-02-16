@@ -108,6 +108,7 @@ FONT_KEYS=(
 # Log file
 LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}"
 LOG_FILE="${LOG_DIR}/gloam.log"
+MODE_FILE="${XDG_RUNTIME_DIR}/gloam-runtime"
 LOG_MAX_SIZE=102400  # 100KB
 GLOAM_DEBUG="${GLOAM_DEBUG:-false}"
 
@@ -2684,7 +2685,6 @@ apply_theme() {
     fi
 
     dbus-send --session --type=signal /KGlobalSettings org.kde.KGlobalSettings.forceRefresh 2>/dev/null || warn "dbus forceRefresh signal failed — open apps may not update until restarted"
-    echo "$mode" > "${XDG_RUNTIME_DIR}/gloam-runtime"
     log "Switched to ${MODE} mode"
 }
 
@@ -2762,6 +2762,13 @@ do_watch() {
     plasma-apply-lookandfeel -a "$PREV_LAF" 2>/dev/null
     [[ "$auto_mode" == "true" ]] && kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
     apply_theme "$PREV_LAF" true
+    if [[ "$auto_mode" == "true" ]]; then
+        set_mode auto
+    elif [[ "$PREV_LAF" == "$LAF_DARK" ]]; then
+        set_mode dark
+    else
+        set_mode light
+    fi
     # Ensure knighttimed gets a fresh GeoClue location. The daemon gives up
     # permanently if GeoClue isn't ready at startup, so wait for it and restart.
     (
@@ -2796,6 +2803,16 @@ do_watch() {
             apply_theme "$laf"
             PREV_LAF="$laf"
             last_apply=$(date +%s)
+            # Notify the plasmoid
+            local auto_mode
+            auto_mode=$(kreadconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel)
+            if [[ "$auto_mode" == "true" ]]; then
+                set_mode auto
+            elif [[ "$laf" == "$LAF_DARK" ]]; then
+                set_mode dark
+            else
+                set_mode light
+            fi
         fi
     done
 }
@@ -2851,11 +2868,24 @@ show_osd() {
         org.kde.osdService.showText "$icon" "$text" 2>/dev/null || true
 }
 
+# Write mode state and notify the plasmoid via DBus signal
+set_mode() {
+    echo "$1" > "$MODE_FILE"
+}
+
 # Switch to a specific mode: "light" or "dark"
 # Pass --keep-auto to re-enable AutomaticLookAndFeel after plasma-apply-lookandfeel clears it.
+# Pass --silent to skip showing the OSD.
 do_switch() {
     local keep_auto=false
-    if [[ "${1:-}" == "--keep-auto" ]]; then keep_auto=true; shift; fi
+    local silent=false
+    while [[ "${1:-}" == --* ]]; do
+        case "$1" in
+            --keep-auto) keep_auto=true; shift ;;
+            --silent) silent=true; shift ;;
+            *) break ;;
+        esac
+    done
     local mode="$1"
     load_config_strict
 
@@ -2866,7 +2896,22 @@ do_switch() {
 
     local friendly_name
     friendly_name=$(get_friendly_name laf "$laf")
+    [[ "$keep_auto" != true ]] && set_mode "$mode"
+    [[ "$silent" != true ]] && show_osd "$([[ "$mode" == "light" ]] && echo "weather-clear" || echo "weather-clear-night")" "$label"
     echo -e "Switching to ${icon} ${label} theme: ${BOLD}$friendly_name${RESET}"
+
+    # If the LAF is already applied (e.g. auto had the same theme), just update the auto flag
+    local current_laf
+    current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage)
+    if [[ "$current_laf" == "$laf" ]]; then
+        if [[ "$keep_auto" == true ]]; then
+            kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
+        else
+            kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel false
+        fi
+        return
+    fi
+
     plasma-apply-lookandfeel -a "$laf" 2>/dev/null
 
     if [[ "$keep_auto" == true ]]; then
@@ -2876,10 +2921,12 @@ do_switch() {
     apply_theme "$laf"
 }
 
-do_light() { do_switch light; show_osd "weather-clear" "Light"; }
-do_dark()  { do_switch dark;  show_osd "weather-clear-night" "Dark"; }
+do_light() { do_switch light; }
+do_dark()  { do_switch dark; }
 
 do_auto() {
+    set_mode auto
+    show_osd "contrast" "Auto"
     # Determine correct theme for current time via KNightTime
     local is_daylight=true
     local subscribe_output
@@ -2910,11 +2957,10 @@ do_auto() {
     fi
 
     if [[ "$is_daylight" == true ]]; then
-        do_switch --keep-auto light
+        do_switch --keep-auto --silent light
     else
-        do_switch --keep-auto dark
+        do_switch --keep-auto --silent dark
     fi
-    show_osd "contrast" "Auto"
 }
 
 # Cycle: light → dark → auto → light
@@ -2927,10 +2973,13 @@ do_toggle() {
 
     if [[ "$auto_mode" == "true" ]]; then
         do_light
+        echo "Mode: Light"
     elif [[ "$current_laf" == "$LAF_DARK" ]]; then
         do_auto
+        echo "Mode: Auto"
     else
         do_dark
+        echo "Mode: Dark"
     fi
 }
 
