@@ -94,7 +94,9 @@ PlasmoidItem {
         onClicked: root.runCommand("gloam toggle")
 
         Kirigami.Icon {
-            source: Plasmoid.icon
+            source: root.mode === "auto" ? "contrast"
+                  : root.mode === "dark" ? "weather-clear-night"
+                  : "weather-clear"
             anchors.fill: parent
             active: mouseArea.containsMouse
             visible: !root.busy
