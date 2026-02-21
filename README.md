@@ -15,7 +15,7 @@ cd gloam-* && ./gloam.sh configure
 
 ## Releases
 
-**Latest:** [v1.2.1](https://github.com/edmogeor/gloam/releases/tag/v1.2.1)
+**Latest:** [v1.2.2](https://github.com/edmogeor/gloam/releases/tag/v1.2.2)
 
 See the full [changelog](CHANGELOG.md) for details.
 
