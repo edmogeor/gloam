@@ -49,7 +49,7 @@ BLUE='\033[38;5;99m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.2.1"
+GLOAM_VERSION="1.2.2"
 GLOAM_REPO="edmogeor/gloam"
 
 
@@ -313,6 +313,33 @@ get_patches_dir() {
     fi
 }
 
+# Fetch patches from GitHub if not available locally (for global installs without patches)
+fetch_patches_if_missing() {
+    local patches_dir
+    patches_dir=$(get_patches_dir) && return 0
+
+    msg_info "Patches not found locally, fetching from GitHub..."
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
+    local tarball_url="https://api.github.com/repos/${GLOAM_REPO}/tarball/$(curl -fsSL --max-time 5 "https://api.github.com/repos/${GLOAM_REPO}/releases/latest" 2>/dev/null | grep '"tag_name"' | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "main")"
+
+    if ! curl -fsSL --max-time 30 "$tarball_url" | tar xz -C "$tmp_dir" --strip-components=1 2>/dev/null; then
+        rm -rf "$tmp_dir"
+        return 1
+    fi
+
+    if [[ -d "$tmp_dir/patches" ]]; then
+        sudo mkdir -p "${GLOBAL_SCRIPTS_DIR}" || { rm -rf "$tmp_dir"; return 1; }
+        sudo rm -rf "${GLOBAL_SCRIPTS_DIR}/patches"
+        sudo cp -r "$tmp_dir/patches" "${GLOBAL_SCRIPTS_DIR}/" || { rm -rf "$tmp_dir"; return 1; }
+        rm -rf "$tmp_dir"
+        return 0
+    fi
+
+    rm -rf "$tmp_dir"
+    return 1
+}
+
 # Base paths (may be overridden by global install)
 KVANTUM_DIR="${HOME}/.config/Kvantum"
 CONFIG_FILE="${HOME}/.config/gloam.conf"
@@ -432,6 +459,7 @@ install_cli_binary() {
         gloam_cmd cp "$0" "$cli_path"
     fi
     gloam_cmd chmod 755 "$cli_path"
+    deploy_patches_dir
 }
 
 # Deploy patch files to global location so they survive across sessions
@@ -1707,7 +1735,10 @@ _get_plasma_integration_so() {
 
 install_patch_plasma_integration() {
     local patches_dir
-    patches_dir=$(get_patches_dir) || { error "Patches directory not found."; return 1; }
+    patches_dir=$(get_patches_dir) || {
+        fetch_patches_if_missing || { error "Could not fetch patches. Run from source directory or check network."; return 1; }
+        patches_dir=$(get_patches_dir)
+    }
     local patch_file="${patches_dir}/plasma-integration-force-refresh.patch"
     local src_dir="${PATCH_BUILD_DIR}/plasma-integration"
 
@@ -3113,6 +3144,11 @@ do_configure() {
 
     # Handle --patches: always rebuild and reinstall Plasma patch
     if [[ "$configure_patches" == true ]]; then
+        # Detect if running from global installation
+        if [[ -x "/usr/local/bin/gloam" ]] && [[ "$(realpath "$0" 2>/dev/null)" == "/usr/local/bin/gloam" ]]; then
+            INSTALL_GLOBAL=true
+        fi
+
         msg_header "Plasma Patches"
 
         msg_muted "This will rebuild and install the plasma-integration patch from source."

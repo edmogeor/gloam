@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2] - 2026-02-21
+
+### Fixed
+- Patches directory not found when running `gloam configure --patches` from a global installation
+- Patches are now deployed to `/usr/local/share/gloam/patches` during global CLI installation
+- Automatic fallback to fetch patches from GitHub when not available locally
+
 ## [1.2.1] - 2026-02-16
 
 ### Added
