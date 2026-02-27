@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.0] - 2026-02-27
+
+### Fixed
+- **KDE crash on patch reinstall:** replacing the plasma-integration `.so` while KDE is running caused crashes. The patched library is now staged to `~/.cache/gloam/` and installed on next login by the gloam service (before KDE loads the plugin)
+- Passwordless sudo helper (`/usr/local/lib/gloam/install-staged-patch`) allows the systemd user service to install staged patches without a TTY, following the same pattern as the existing SDDM helpers
+
 ## [1.2.2] - 2026-02-21
 
 ### Fixed

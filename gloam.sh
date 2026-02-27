@@ -49,7 +49,7 @@ BLUE='\033[38;5;99m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.2.2"
+GLOAM_VERSION="1.3.0"
 GLOAM_REPO="edmogeor/gloam"
 
 
@@ -349,6 +349,7 @@ SHORTCUT_ID="gloam-toggle.desktop"
 
 # Patch management
 PATCH_BUILD_DIR="${HOME}/.cache/gloam/patch-build"
+PATCH_STAGED_SO="${HOME}/.cache/gloam/staged-plasma-integration.so"
 
 # Delays (seconds) for KDE to finish writing configs after LookAndFeel apply
 DELAY_LAF_SETTLE=0.5
@@ -1783,17 +1784,65 @@ install_patch_plasma_integration() {
         return 1
     fi
 
-    # Back up the original .so for restore on remove.
-    # Update the backup if Plasma replaced our patched version (e.g. system update).
-    if [[ ! -f "${original_so}.gloam-orig" ]] || ! is_patch_plasma_integration_installed; then
-        sudo cp "$original_so" "${original_so}.gloam-orig"
+    if pgrep -x plasmashell &>/dev/null; then
+        # KDE is running — stage for install on next session start
+        if [[ ! -x /usr/local/lib/gloam/install-staged-patch ]]; then
+            setup_patch_sudoers
+        fi
+        cp "$built_so" "$PATCH_STAGED_SO"
+        msg_ok "plasma-integration patch built and staged."
+        msg_muted "It will be installed on next login (before KDE starts)."
+    else
+        # KDE not running — install directly
+        if [[ ! -f "${original_so}.gloam-orig" ]] || ! is_patch_plasma_integration_installed; then
+            sudo cp "$original_so" "${original_so}.gloam-orig"
+        fi
+        msg_info "Installing plasma-integration (requires sudo)..."
+        sudo cp "$built_so" "${original_so}.tmp"
+        sudo mv "${original_so}.tmp" "$original_so"
+        msg_ok "plasma-integration forceRefresh patch installed."
     fi
+}
 
-    msg_info "Installing plasma-integration (requires sudo)..."
-    sudo cp "$built_so" "${original_so}.tmp"
-    sudo mv "${original_so}.tmp" "$original_so"
+install_staged_patches() {
+    [[ -f "$PATCH_STAGED_SO" ]] || return 0
+    if [[ ! -x /usr/local/lib/gloam/install-staged-patch ]]; then
+        log "Staged patch found but helper not installed. Skipping."
+        return 1
+    fi
+    sudo /usr/local/lib/gloam/install-staged-patch "$PATCH_STAGED_SO" || {
+        log "Failed to install staged patch."
+        return 1
+    }
+    rm -f "$PATCH_STAGED_SO"
+    log "Staged plasma-integration patch installed."
+}
 
-    msg_ok "plasma-integration forceRefresh patch installed."
+setup_patch_sudoers() {
+    sudo mkdir -p /usr/local/lib/gloam
+    sudo tee /usr/local/lib/gloam/install-staged-patch > /dev/null <<'SCRIPT'
+#!/bin/bash
+# Install a staged plasma-integration .so, called by gloam service on startup.
+set -euo pipefail
+staged="$1"
+[[ -f "$staged" ]] || exit 1
+for so in /usr/lib/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so \
+          /usr/lib64/qt6/plugins/platformthemes/KDEPlasmaPlatformTheme6.so; do
+    [[ -f "$so" ]] || continue
+    # Back up original if no backup exists or if current .so lacks the patch
+    if [[ ! -f "${so}.gloam-orig" ]] || ! nm -C "$so" 2>/dev/null | grep -q forceStyleRefresh; then
+        cp "$so" "${so}.gloam-orig"
+    fi
+    cp "$staged" "${so}.tmp"
+    mv "${so}.tmp" "$so"
+    exit 0
+done
+exit 1
+SCRIPT
+    sudo chmod 755 /usr/local/lib/gloam/install-staged-patch
+    echo "ALL ALL=(ALL) NOPASSWD: /usr/local/lib/gloam/install-staged-patch" | \
+        sudo tee /etc/sudoers.d/gloam-patch > /dev/null
+    sudo chmod 440 /etc/sudoers.d/gloam-patch
 }
 
 
@@ -1817,6 +1866,7 @@ remove_patches() {
     done
 
     rm -rf "$PATCH_BUILD_DIR"
+    rm -f "$PATCH_STAGED_SO"
 
     return $(( removed_count == 0 ))
 }
@@ -1831,8 +1881,12 @@ check_patches() {
         msg_info "  Patching plasma-integration..."
         install_patch_plasma_integration || warn "plasma-integration patch failed. Continuing."
         deploy_patches_dir
+        if [[ -f "$PATCH_STAGED_SO" ]]; then
+            msg_ok "Plasma patch staged (will install on next login)."
+        else
+            msg_ok "Plasma patch installed."
+        fi
         NEEDS_LOGOUT=true
-        msg_ok "Plasma patch installed."
         return 0
     fi
 
@@ -1865,11 +1919,11 @@ check_patches() {
     install_patch_plasma_integration || warn "plasma-integration patch failed. Continuing."
 
     deploy_patches_dir
-    NEEDS_LOGOUT=true
 
     echo ""
     msg_warn "Plasma updates will overwrite this patch."
     msg_muted "Re-run 'gloam configure --patches' after updating Plasma."
+    NEEDS_LOGOUT=true
 }
 
 get_laf() {
@@ -2731,6 +2785,8 @@ do_watch() {
     # shellcheck source=/dev/null
     source "$CONFIG_FILE"
 
+    install_staged_patches
+
     log "Watcher started"
 
     # Wait for KNightTime dbus service
@@ -3177,10 +3233,10 @@ do_configure() {
         sudo_auth || die "Sudo required to install patches."
         install_patch_plasma_integration || warn "plasma-integration patch failed."
         deploy_patches_dir
-        NEEDS_LOGOUT=true
         echo ""
         msg_warn "Plasma updates will overwrite this patch."
         msg_muted "Re-run 'gloam configure --patches' after updating Plasma."
+        NEEDS_LOGOUT=true
         prompt_logout_if_needed
         exit 0
     fi
@@ -4153,7 +4209,7 @@ do_remove() {
     [[ "$has_patch_files" != true ]] && is_patch_plasma_integration_installed && has_patch_files=true
 
     local needs_sudo=false
-    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -f /etc/sudoers.d/gloam-sddm-bg || -d /usr/local/lib/gloam || -d /usr/share/wallpapers/gloam || "$has_patch_files" == true ]] && needs_sudo=true
+    [[ -f "$global_service" || -f "$global_cli" || -d "$global_plasmoid" || -f "$global_shortcut" || -d "$global_theme_light" || -d "$global_theme_dark" || -f "$skel_config" || -L "$global_service_link" || -f "$GLOBAL_INSTALL_MARKER" || -d "$GLOBAL_SCRIPTS_DIR" || -f /etc/sudoers.d/gloam-sddm || -f /etc/sudoers.d/gloam-sddm-bg || -f /etc/sudoers.d/gloam-patch || -d /usr/local/lib/gloam || -d /usr/share/wallpapers/gloam || "$has_patch_files" == true ]] && needs_sudo=true
 
     if [[ "$needs_sudo" == true ]]; then
         # Warn about global installation
@@ -4309,6 +4365,7 @@ do_remove() {
     # Remove SDDM sudoers rule and wrapper script
     [[ -f /etc/sudoers.d/gloam-sddm ]] && { sudo rm /etc/sudoers.d/gloam-sddm; _remove_print "SDDM theme sudoers rule"; }
     [[ -f /etc/sudoers.d/gloam-sddm-bg ]] && { sudo rm /etc/sudoers.d/gloam-sddm-bg; _remove_print "SDDM background sudoers rule"; }
+    [[ -f /etc/sudoers.d/gloam-patch ]] && { sudo rm /etc/sudoers.d/gloam-patch; _remove_print "Patch install sudoers rule"; }
     [[ -d /usr/local/lib/gloam ]] && { sudo rm -rf /usr/local/lib/gloam; _remove_print "SDDM background helper"; }
 
     # Remove plasmoid, shortcut, and custom themes
