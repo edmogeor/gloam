@@ -522,6 +522,9 @@ apply_update() {
         return 1
     fi
 
+    # Pre-authenticate sudo before any spinner starts, so the prompt isn't interleaved
+    [[ "$INSTALL_GLOBAL" == true ]] && sudo -v
+
     _spinner_start "Downloading v${GLOAM_REMOTE_VERSION}..."
 
     local tmp_dir
@@ -533,6 +536,10 @@ apply_update() {
         rm -rf "$tmp_dir"
         return 1
     fi
+
+    _spinner_stop
+
+    _spinner_start "Installing v${GLOAM_REMOTE_VERSION}..."
 
     # Update the CLI binary (mv to new inode so the running script is not corrupted)
     local cli_path cli_dir tmp_cli
@@ -562,6 +569,7 @@ apply_update() {
     rm -rf "$tmp_dir"
 
     _spinner_stop
+
     echo ""
     msg_ok "Updated to v${GLOAM_REMOTE_VERSION}."
     return 0
