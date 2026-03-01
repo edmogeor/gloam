@@ -49,7 +49,7 @@ BLUE='\033[38;5;99m'
 RESET='\033[0m'
 
 # Version
-GLOAM_VERSION="1.3.2"
+GLOAM_VERSION="1.3.4"
 GLOAM_REPO="edmogeor/gloam"
 
 
@@ -2858,8 +2858,11 @@ do_watch() {
         [[ -z "$PREV_LAF" || ("$PREV_LAF" != "$LAF_LIGHT" && "$PREV_LAF" != "$LAF_DARK") ]] && PREV_LAF="$LAF_DARK"
     fi
     log "Initial theme: $PREV_LAF"
-    plasma-apply-lookandfeel -a "$PREV_LAF" 2>/dev/null
-    [[ "$auto_mode" == "true" ]] && kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
+    if [[ "$auto_mode" != "true" ]]; then
+        # Manual mode: apply the full look-and-feel (Plasma's autoswitcher is disabled)
+        plasma-apply-lookandfeel -a "$PREV_LAF" 2>/dev/null
+    fi
+    # Sync external themes (Kvantum, GTK, etc.) to match the current look-and-feel
     apply_theme "$PREV_LAF" true
     if [[ "$auto_mode" == "true" ]]; then
         set_mode auto
@@ -2928,8 +2931,7 @@ do_watch() {
                 current_laf=$(kreadconfig6 --file kdeglobals --group KDE --key LookAndFeelPackage)
                 if [[ "$current_laf" != "$correct_laf" ]]; then
                     log "GeoClue fix: correcting theme from $current_laf to $correct_laf"
-                    plasma-apply-lookandfeel -a "$correct_laf" 2>/dev/null
-                    kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
+                    plasma-apply-lookandfeel -a "$correct_laf" -k 2>/dev/null
                     apply_theme "$correct_laf"
                     # Record the apply timestamp so the main dbus-monitor loop
                     # debounces the notifyChange signal emitted by
@@ -3082,10 +3084,10 @@ do_switch() {
         return
     fi
 
-    plasma-apply-lookandfeel -a "$laf" 2>/dev/null
-
     if [[ "$keep_auto" == true ]]; then
-        kwriteconfig6 --file kdeglobals --group KDE --key AutomaticLookAndFeel true
+        plasma-apply-lookandfeel -a "$laf" -k 2>/dev/null
+    else
+        plasma-apply-lookandfeel -a "$laf" 2>/dev/null
     fi
 
     apply_theme "$laf"
